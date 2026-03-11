@@ -23,7 +23,7 @@ std::string Http::Response::render() const
     raw += "\r\n";
     raw += body;
 
-    LOG_DEBUG("SENT\n" + raw);
+    LOG_DEBUG("SENT\n" + raw +"\n");
     
     return raw;
 }

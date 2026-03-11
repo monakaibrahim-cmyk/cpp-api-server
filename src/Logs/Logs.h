@@ -2,6 +2,7 @@
 #define LOGS_H
 
 #include <iostream>
+#include <fstream>
 #include <syncstream>
 #include <mutex>
 #include <string>
@@ -96,6 +97,25 @@ public:
             << " [" << YELLOW << trim << RESET << ":" << YELLOW << line << RESET << "]"
             << " [" << GREEN << std::this_thread::get_id() << RESET << "] "
             << message << std::endl << "[CMD] >> " << std::flush;
+
+        std::ofstream _file("Log.txt", std::ios::app);
+
+        if (_file.is_open())
+        {
+            std::osyncstream _sync(_file);
+
+            _sync << std::put_time(std::localtime(&time), "%H:%M:%S")
+                << " [" << names(level) << "]"
+                << " [" << trim << ":" << line << "]"
+                << " [" << std::this_thread::get_id() << "] "
+                << message << std::endl;
+        }
+        else
+        {
+            std::osyncstream(std::cout) << "Error: " << RED << "Unable to open file"<< RESET "!" << std::endl << std::flush;
+        }
+
+        _file.close();
     }
 };
 
