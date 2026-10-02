@@ -1,0 +1,7 @@
+-- mod_template configuration template
+-- Copy this file to config/mod_template.lua to customize.
+
+mod_template = {
+    enabled = true,
+    custom_setting = "default_value",
+}
