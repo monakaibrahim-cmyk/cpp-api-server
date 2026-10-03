@@ -1,0 +1,47 @@
+﻿{
+  "configurations": [
+    {
+      "name": "x64-Debug",
+      "generator": "Ninja",
+      "configurationType": "Debug",
+      "inheritEnvironments": [ "msvc_x64_x64" ],
+      "buildRoot": "${projectDir}\\build\\${name}",
+      "installRoot": "${projectDir}\\build\\install\\${name}",
+      "cmakeCommandArgs": "",
+      "buildCommandArgs": "",
+      "ctestCommandArgs": "",
+      "variables": [
+        {
+          "name": "FTXUI_MICROSOFT_TERMINAL_FALLBACK",
+          "value": "true",
+          "type": "BOOL"
+        },
+        {
+          "name": "FETCHCONTENT_BASE_DIR",
+          "value": "C:/Users/Canonical/source/repos/cpp-api-server/build/x64-Debug/_deps",
+          "type": "PATH"
+        },
+        {
+          "name": "Boost_COMPILER",
+          "value": "-vc145",
+          "type": "STRING"
+        },
+        {
+          "name": "Boost_ARCHITECTURE",
+          "value": "-x64",
+          "type": "STRING"
+        },
+        {
+          "name": "BOOST_ROOT",
+          "value": "C:/local/boost_1_92_0",
+          "type": "PATH"
+        },
+        {
+          "name": "BOOST_LIBRARYDIR",
+          "value": "C:/local/boost_1_92_0/lib64-msvc-14.5",
+          "type": "PATH"
+        }
+      ]
+    }
+  ]
+}

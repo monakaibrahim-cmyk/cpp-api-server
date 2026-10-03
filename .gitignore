@@ -74,3 +74,5 @@ docs/html/
 *.pem
 config/certs/
 
+# Visual Studio
+.vs
