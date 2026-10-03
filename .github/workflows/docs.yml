@@ -23,16 +23,46 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
 
+    env:
+      DOXYGEN_VERSION: Release_1_18_0
+      DOXYGEN_INSTALL_DIR: ${{ runner.temp }}/doxygen-install
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Doxygen and Graphviz
+      - name: Install system dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends doxygen graphviz
+          sudo apt-get install -y --no-install-recommends flex bison graphviz ninja-build
+
+      - name: Cache Doxygen binary
+        id: doxygen-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DOXYGEN_INSTALL_DIR }}
+          key: doxygen-${{ runner.os }}-${{ env.DOXYGEN_VERSION }}
+
+      - name: Clone and build Doxygen
+        if: steps.doxygen-cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Cloning Doxygen (${{ env.DOXYGEN_VERSION }}) from source..."
+          git clone --depth 1 --branch "${{ env.DOXYGEN_VERSION }}" https://github.com/doxygen/doxygen.git "${{ runner.temp }}/doxygen-src"
+          cmake -B "${{ runner.temp }}/doxygen-src/build" \
+                -S "${{ runner.temp }}/doxygen-src" \
+                -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release \
+                -Dbuild_wizard=OFF \
+                -DCMAKE_INSTALL_PREFIX="${{ env.DOXYGEN_INSTALL_DIR }}"
+          cmake --build "${{ runner.temp }}/doxygen-src/build" -j$(nproc)
+          cmake --install "${{ runner.temp }}/doxygen-src/build"
+          rm -rf "${{ runner.temp }}/doxygen-src"
+
+      - name: Add Doxygen to PATH
+        run: |
+          echo "${{ env.DOXYGEN_INSTALL_DIR }}/bin" >> $GITHUB_PATH
 
       - name: Verify Doxygen and Graphviz versions
         run: |
