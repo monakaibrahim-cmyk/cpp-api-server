@@ -29,7 +29,17 @@ jobs:
       - name: Install clang-format
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends clang-format
+          if ! sudo apt-get install -y --no-install-recommends clang-format-19 2>/dev/null; then
+            echo "Installing clang-format-19 from LLVM apt repository..."
+            sudo apt-get install -y --no-install-recommends wget lsb-release software-properties-common gnupg
+            wget -q https://apt.llvm.org/llvm.sh
+            chmod +x llvm.sh
+            sudo ./llvm.sh 19
+            sudo apt-get install -y clang-format-19
+            sudo ln -sf /usr/bin/clang-format-19 /usr/bin/clang-format
+          else
+            sudo ln -sf /usr/bin/clang-format-19 /usr/bin/clang-format
+          fi
 
       - name: Verify clang-format version
         run: clang-format --version
@@ -37,6 +47,7 @@ jobs:
       - name: Inspect code style
         run: |
           echo "Scanning C++ headers and sources for style violations..."
+          VIOLATIONS=0
           FILES=$(find include src modules -type f \( -name "*.h" -o -name "*.cpp" \))
 
           if [ -z "$FILES" ]; then
@@ -44,13 +55,18 @@ jobs:
             exit 0
           fi
 
-          echo "$FILES" | xargs clang-format --dry-run --Werror
-          STATUS=$?
+          for file in $FILES; do
+            if ! clang-format --dry-run --Werror "$file" 2>&1; then
+              echo "::error file=$file::Style violation detected in $file"
+              diff -u "$file" <(clang-format "$file") || true
+              VIOLATIONS=$((VIOLATIONS + 1))
+            fi
+          done
 
-          if [ $STATUS -eq 0 ]; then
+          if [ $VIOLATIONS -eq 0 ]; then
             echo "All C++ files conform strictly to .clang-format specifications."
           else
-            echo "Code formatting violations detected."
+            echo "Total files with formatting violations: $VIOLATIONS"
             echo "To format automatically, run: find include src modules -type f \( -name \"*.h\" -o -name \"*.cpp\" \) | xargs clang-format -i"
-            exit $STATUS
+            exit 1
           fi
