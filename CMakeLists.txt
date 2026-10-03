@@ -17,14 +17,6 @@ FetchContent_Declare(ftxui
 )
 FetchContent_MakeAvailable(ftxui)
 
-# ── SQLite3 ────────────────────────────────────────────────────────
-FetchContent_Declare(sqlite3
-    URL https://www.sqlite.org/2024/sqlite-amalgamation-3460100.zip
-)
-FetchContent_MakeAvailable(sqlite3)
-add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
-target_include_directories(sqlite3 PUBLIC ${sqlite3_SOURCE_DIR})
-
 # ── Crow (header-only HTTP framework) ─────────────────────────────
 set(CROW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CROW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -109,7 +101,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Boost::log_setup
     Boost::thread
     Threads::Threads
-    sqlite3
     lua_lib
 )
 
@@ -117,7 +108,7 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     SOL_ALL_SAFETIES_ON=1
 )
 
-# ── Modules Auto-Discovery (AzerothCore style) ───────────────────
+# ── Modules Auto-Discovery ───────────────────────────────────────
 file(GLOB MODULE_DIRS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/modules/*")
 set(MODULE_LIBRARIES "")
 
@@ -151,3 +142,14 @@ add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
         ${CMAKE_SOURCE_DIR}/scripts
         $<TARGET_FILE_DIR:${PROJECT_NAME}>/scripts
 )
+
+# ── Doxygen Documentation ──────────────────────────────────────────
+find_package(Doxygen OPTIONAL_COMPONENTS dot)
+if(DOXYGEN_FOUND)
+    add_custom_target(docs
+        COMMAND ${DOXYGEN_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Doxyfile
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Generating API documentation with Doxygen Awesome"
+        VERBATIM
+    )
+endif()

@@ -67,5 +67,10 @@ vcpkg_installed/
 Testing/
 .cache/
 logs/
-Logs/
+# Doxygen generated documentation
+docs/html/
+
+# TLS / Cryptographic keys
+*.pem
+config/certs/
 

@@ -21,4 +21,17 @@ config = {
         scripts = "info",
         metrics = "debug",
     },
+
+    -- Database configuration (Scaffold ORM)
+    -- Pluggable template scaffold: developers can add their chosen driver in C++
+    -- (e.g. MySQL, PostgreSQL, SQLite, etc.) and configure it here.
+    db = {
+        driver = "",
+        connection = "",
+    },
+
+    -- Optional .htaccess file (secondary option to Lua scripting rules).
+    -- If provided by the user, rules are loaded from this file;
+    -- otherwise, rules and instructions defined directly in Lua scripting are used.
+    htaccess_file = "", -- e.g. "config/.htaccess" or "" (default: use Lua script rules)
 }

@@ -1,5 +1,5 @@
-#include "api/thread_pool.hpp"
-#include "api/logger.hpp"
+#include "api/thread_pool.h"
+#include "api/logger.h"
 
 namespace api
 {
@@ -12,10 +12,7 @@ thread_pool::thread_pool(size_t thread_count)
     }
 }
 
-thread_pool::~thread_pool()
-{
-    stop();
-}
+thread_pool::~thread_pool() { stop(); }
 
 void thread_pool::start(size_t thread_count)
 {
@@ -29,13 +26,13 @@ void thread_pool::start(size_t thread_count)
     stop_.store(false, std::memory_order_relaxed);
     workers_.reserve(thread_count);
 
-    for (size_t i = 0; i < thread_count; ++i)
+    for (size_t index = 0; index < thread_count; ++index)
     {
         workers_.emplace_back(&thread_pool::worker_loop, this);
     }
 
     LOG_INFO("server", "Started background worker thread pool with "
-             << thread_count << " worker threads");
+                           << thread_count << " worker threads");
 }
 
 void thread_pool::stop()
@@ -51,9 +48,9 @@ void thread_pool::stop()
         stop_.store(true, std::memory_order_relaxed);
     }
 
-    cv_.notify_all();
+    condition_variable_.notify_all();
 
-    for (std::thread& worker : workers_)
+    for (std::thread &worker : workers_)
     {
         if (worker.joinable())
         {
@@ -77,7 +74,7 @@ void thread_pool::post(std::function<void()> task)
         tasks_.push(std::move(task));
     }
 
-    cv_.notify_one();
+    condition_variable_.notify_one();
 }
 
 void thread_pool::worker_loop()
@@ -89,11 +86,12 @@ void thread_pool::worker_loop()
         {
             std::unique_lock<std::mutex> lock(queue_mutex_);
 
-            cv_.wait(
+            condition_variable_.wait(
                 lock,
                 [this]()
                 {
-                    return stop_.load(std::memory_order_relaxed) || !tasks_.empty();
+                    return stop_.load(std::memory_order_relaxed) ||
+                           !tasks_.empty();
                 });
 
             if (stop_.load(std::memory_order_relaxed) && tasks_.empty())
@@ -111,9 +109,11 @@ void thread_pool::worker_loop()
         {
             task();
         }
-        catch (const std::exception& e)
+        catch (const std::exception &exception)
         {
-            LOG_ERROR("server", "Unhandled exception in background worker task: " << e.what());
+            LOG_ERROR("server",
+                      "Unhandled exception in background worker task: "
+                          << exception.what());
         }
         catch (...)
         {
@@ -154,11 +154,11 @@ bool thread_pool::is_running() const noexcept
     return !stop_.load(std::memory_order_relaxed) && !workers_.empty();
 }
 
-thread_pool& s_thread_pool()
+thread_pool &s_thread_pool()
 {
-    static thread_pool s_pool;
+    static thread_pool static_pool;
 
-    return s_pool;
+    return static_pool;
 }
 
 } // namespace api

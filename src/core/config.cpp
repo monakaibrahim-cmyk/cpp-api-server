@@ -1,4 +1,4 @@
-#include "api/config.hpp"
+#include "api/config.h"
 
 #include <filesystem>
 #include <print>
@@ -8,85 +8,120 @@
 namespace api
 {
 
-server_config load_config(const std::string& lua_config_path)
+ServerConfig load_config(const std::string &lua_configuration_path)
 {
-    server_config cfg;
+    ServerConfig configuration;
 
-    if (!std::filesystem::exists(lua_config_path))
+    if (!std::filesystem::exists(lua_configuration_path))
     {
-        std::println(stderr, "[config] File not found: {} — using defaults", lua_config_path);
+        std::println(stderr, "[config] File not found: {} — using defaults",
+                     lua_configuration_path);
 
-        return cfg;
+        return configuration;
     }
 
     try
     {
-        sol::state lua;
+        sol::state lua_state;
 
-        lua.open_libraries(
-            sol::lib::base,
-            sol::lib::string,
-            sol::lib::table,
-            sol::lib::math);
+        lua_state.open_libraries(sol::lib::base, sol::lib::string,
+                                 sol::lib::table, sol::lib::math);
 
-        lua.script_file(lua_config_path);
+        lua_state.script_file(lua_configuration_path);
 
-        sol::optional<sol::table> tbl = lua["config"];
+        sol::optional<sol::table> config_table_optional = lua_state["config"];
 
-        if (!tbl)
+        if (!config_table_optional)
         {
-            std::println(stderr, "[config] No 'config' table in {} — using defaults", lua_config_path);
+            std::println(stderr,
+                         "[config] No 'config' table in {} — using defaults",
+                         lua_configuration_path);
 
-            return cfg;
+            return configuration;
         }
 
-        sol::table t = tbl.value();
+        sol::table config_table = config_table_optional.value();
 
-        cfg.port = t.get_or<uint16_t>("port", cfg.port);
-        cfg.threads = t.get_or<uint16_t>("threads", cfg.threads);
-        cfg.worker_threads = t.get_or<uint16_t>("worker_threads", cfg.worker_threads);
-        cfg.log_level = t.get_or<std::string>("log_level", cfg.log_level);
-        cfg.log_dir = t.get_or<std::string>("log_dir", cfg.log_dir);
-        cfg.dashboard_enabled = t.get_or<bool>("dashboard_enabled", cfg.dashboard_enabled);
-        cfg.max_body_size = t.get_or<size_t>("max_body_size", cfg.max_body_size);
-        cfg.scripts_dir = t.get_or<std::string>("scripts_dir", cfg.scripts_dir);
-        cfg.config_dir = t.get_or<std::string>("config_dir", cfg.config_dir);
-        cfg.cache_enabled = t.get_or<bool>("cache_enabled", cfg.cache_enabled);
-        cfg.cache_max_items = t.get_or<size_t>("cache_max_items", cfg.cache_max_items);
+        configuration.port =
+            config_table.get_or<uint16_t>("port", configuration.port);
+        configuration.threads =
+            config_table.get_or<uint16_t>("threads", configuration.threads);
+        configuration.worker_threads = config_table.get_or<uint16_t>(
+            "worker_threads", configuration.worker_threads);
+        configuration.log_level = config_table.get_or<std::string>(
+            "log_level", configuration.log_level);
+        configuration.log_dir =
+            config_table.get_or<std::string>("log_dir", configuration.log_dir);
+        configuration.dashboard_enabled = config_table.get_or<bool>(
+            "dashboard_enabled", configuration.dashboard_enabled);
+        configuration.max_body_size = config_table.get_or<size_t>(
+            "max_body_size", configuration.max_body_size);
+        configuration.scripts_dir = config_table.get_or<std::string>(
+            "scripts_dir", configuration.scripts_dir);
+        configuration.config_dir = config_table.get_or<std::string>(
+            "config_dir", configuration.config_dir);
+        configuration.cache_enabled = config_table.get_or<bool>(
+            "cache_enabled", configuration.cache_enabled);
+        configuration.cache_max_items = config_table.get_or<size_t>(
+            "cache_max_items", configuration.cache_max_items);
 
-        sol::optional<sol::table> origins = t["cors_origins"];
+        sol::optional<sol::table> origins = config_table["cors_origins"];
 
         if (origins)
         {
-            cfg.cors_origins.clear();
+            configuration.cors_origins.clear();
 
             origins.value().for_each(
-                [&](sol::object /*key*/, sol::object val)
+                [&](sol::object /*key*/, sol::object origin_value)
                 {
-                    cfg.cors_origins.push_back(val.as<std::string>());
+                    configuration.cors_origins.push_back(
+                        origin_value.as<std::string>());
                 });
         }
 
-        sol::optional<sol::table> channels = t["log_channels"];
+        sol::optional<sol::table> channels = config_table["log_channels"];
 
         if (channels)
         {
             channels.value().for_each(
-                [&](sol::object key, sol::object val)
+                [&](sol::object channel_key, sol::object channel_value)
                 {
-                    if (key.is<std::string>() && val.is<std::string>())
+                    if (channel_key.is<std::string>() &&
+                        channel_value.is<std::string>())
                     {
-                        cfg.log_channels[key.as<std::string>()] = val.as<std::string>();
+                        configuration
+                            .log_channels[channel_key.as<std::string>()] =
+                            channel_value.as<std::string>();
                     }
                 });
         }
+
+        sol::optional<sol::table> database_table_optional = config_table["db"];
+
+        if (database_table_optional)
+        {
+            configuration.db_driver =
+                database_table_optional.value().get_or<std::string>(
+                    "driver", configuration.db_driver);
+            configuration.db_connection =
+                database_table_optional.value().get_or<std::string>(
+                    "connection", configuration.db_connection);
+        }
+
+        configuration.db_driver = config_table.get_or<std::string>(
+            "db_driver", configuration.db_driver);
+        configuration.db_connection = config_table.get_or<std::string>(
+            "db_connection", configuration.db_connection);
+        configuration.htaccess_file = config_table.get_or<std::string>(
+            "htaccess_file", configuration.htaccess_file);
     }
-    catch (const sol::error& e)
+    catch (const sol::error &sol_exception)
     {
-        std::println(stderr, "[config] Lua error: {} — using defaults", e.what());
+        std::println(stderr, "[config] Lua error: {} — using defaults",
+                     sol_exception.what());
     }
 
-    return cfg;
+    return configuration;
 }
 
 } // namespace api
