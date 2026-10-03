@@ -1,263 +1,518 @@
 #include <atomic>
 #include <cerrno>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
+#include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <memory>
 #include <print>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <unistd.h>
 
-#include "api/cache.hpp"
-#include "api/config.hpp"
-#include "api/connection_tracker.hpp"
-#include "api/dashboard.hpp"
-#include "api/logger.hpp"
-#include "api/lua_engine.hpp"
-#include "api/metrics.hpp"
-#include "api/middleware.hpp"
-#include "api/router.hpp"
-#include "api/script_mgr.hpp"
-#include "api/server.hpp"
-#include "api/service_registry.hpp"
-#include "api/thread_pool.hpp"
+#include "api/cache.h"
+#include "api/config.h"
+#include "api/connection_tracker.h"
+#include "api/dashboard.h"
+#include "api/logger.h"
+#include "api/lua_engine.h"
+#include "api/metrics.h"
+#include "api/middleware.h"
+#include "api/orm.h"
+#include "api/router.h"
+#include "api/script_mgr.h"
+#include "api/server.h"
+#include "api/service_registry.h"
+#include "api/thread_pool.h"
 
 static std::atomic<bool> g_shutdown{false};
 
-static void signal_handler(int /*sig*/)
-{
-    g_shutdown.store(true);
-}
+static void signal_handler(int /*signal_number*/) { g_shutdown.store(true); }
 
-int main(int argc, char* argv[])
+int main(int argc, char *argv[])
 {
     std::string config_path = "config/server.lua";
     int port_override = -1;
     bool no_dashboard = false;
     bool run_background = false;
 
-    for (int i = 1; i < argc; ++i)
-    {
-        std::string arg = argv[i];
+    std::string make_model_name;
+    std::string make_migration_name;
+    std::string table_override;
+    std::string db_scaffold_target;
+    std::string models_dir = "scripts/models";
+    std::string migrations_dir = "scripts/migrations";
+    bool list_db_tables = false;
 
-        if (arg == "--config" && i + 1 < argc)
+    for (int index = 1; index < argc; ++index)
+    {
+        std::string argument = argv[index];
+
+        if (argument == "--config" && index + 1 < argc)
         {
-            config_path = argv[++i];
+            config_path = argv[++index];
         }
-        else if (arg == "--port" && i + 1 < argc)
+        else if (argument == "--port" && index + 1 < argc)
         {
-            port_override = std::stoi(argv[++i]);
+            port_override = std::stoi(argv[++index]);
         }
-        else if (arg == "--headless")
+        else if (argument == "--headless")
         {
             run_background = true;
             no_dashboard = true;
         }
-        else if (arg == "--no-dashboard")
+        else if (argument == "--no-dashboard")
         {
             no_dashboard = true;
         }
-        else if (arg == "--help")
+        else if (argument == "--make:model" && index + 1 < argc)
+        {
+            make_model_name = argv[++index];
+        }
+        else if (argument == "--make:migration" && index + 1 < argc)
+        {
+            make_migration_name = argv[++index];
+        }
+        else if (argument == "--table" && index + 1 < argc)
+        {
+            table_override = argv[++index];
+        }
+        else if (argument == "--db:scaffold" && index + 1 < argc)
+        {
+            db_scaffold_target = argv[++index];
+        }
+        else if (argument == "--db:tables")
+        {
+            list_db_tables = true;
+        }
+        else if (argument == "--models-dir" && index + 1 < argc)
+        {
+            models_dir = argv[++index];
+        }
+        else if (argument == "--migrations-dir" && index + 1 < argc)
+        {
+            migrations_dir = argv[++index];
+        }
+        else if (argument == "--help")
         {
             std::println(
                 "Usage: API-cli [options]\n"
-                "  --config <path>  Configuration file (default: config/server.lua)\n"
-                "  --port <N>       Override listening port\n"
-                "  --headless       Run program in background (daemon mode)\n"
-                "  --no-dashboard   Run in foreground without terminal UI\n"
-                "  --help           Display this help"
-            );
+                "  --config <path>               Configuration file (default: "
+                "config/server.lua)\n"
+                "  --port <N>                    Override listening port\n"
+                "  --headless                    Run program in background "
+                "(daemon mode)\n"
+                "  --no-dashboard                Run in foreground without "
+                "terminal UI\n"
+                "  --make:model <Name>           Generate a new Eloquent model "
+                "in Lua\n"
+                "  --make:migration <Name>       Generate a new database "
+                "migration in Lua\n"
+                "  --table <table_name>          Explicit database table name "
+                "for model/migration\n"
+                "  --db:scaffold <table|all>     Scaffold model(s) and "
+                "migration(s) from database\n"
+                "  --db:tables                   List all discovered database "
+                "tables\n"
+                "  --models-dir <dir>            Target directory for models "
+                "(default: scripts/models)\n"
+                "  --migrations-dir <dir>        Target directory for "
+                "migrations (default: scripts/migrations)\n"
+                "  --help                        Display this help");
 
             return EXIT_SUCCESS;
         }
     }
 
-    auto cfg = api::load_config(config_path);
+    auto configuration = api::load_config(config_path);
+
+    bool is_cli_command = !make_model_name.empty() ||
+                          !make_migration_name.empty() ||
+                          !db_scaffold_target.empty() || list_db_tables;
+
+    if (is_cli_command)
+    {
+        api::init_logging(configuration);
+
+        auto &script_manager = api::s_script_mgr();
+
+        script_manager.initialize();
+        script_manager.on_config_load(configuration);
+
+        if (list_db_tables)
+        {
+            auto tables = api::s_orm().get_tables();
+
+            if (tables.empty())
+            {
+                std::println("No database tables discovered (driver: {}).",
+                             api::s_orm().driver_name());
+            }
+            else
+            {
+                std::println("Discovered database tables ({}):", tables.size());
+
+                for (const auto &table_name : tables)
+                {
+                    std::println("  - {}", table_name);
+                }
+            }
+
+            return EXIT_SUCCESS;
+        }
+
+        if (!db_scaffold_target.empty())
+        {
+            if (db_scaffold_target == "all")
+            {
+                size_t scaffolded_count = api::s_orm().scaffold_all_tables(
+                    models_dir, migrations_dir);
+
+                std::println("Successfully scaffolded {} database table(s) "
+                             "into '{}' and '{}'.",
+                             scaffolded_count, models_dir, migrations_dir);
+            }
+            else
+            {
+                bool is_successful = api::s_orm().scaffold_table_files(
+                    db_scaffold_target, models_dir, migrations_dir);
+
+                if (is_successful)
+                {
+                    std::println("Successfully scaffolded table '{}' into '{}' "
+                                 "and '{}'.",
+                                 db_scaffold_target, models_dir,
+                                 migrations_dir);
+                }
+                else
+                {
+                    std::println(stderr, "Failed to scaffold table '{}'.",
+                                 db_scaffold_target);
+
+                    return EXIT_FAILURE;
+                }
+            }
+
+            return EXIT_SUCCESS;
+        }
+
+        if (!make_model_name.empty())
+        {
+            std::string table_name =
+                !table_override.empty()
+                    ? table_override
+                    : api::class_to_table_name(make_model_name);
+            std::string filename =
+                api::table_to_model_filename(table_name) + ".lua";
+            std::filesystem::path target_directory(models_dir);
+            std::error_code error_code;
+
+            if (!std::filesystem::exists(target_directory, error_code))
+            {
+                std::filesystem::create_directories(target_directory,
+                                                    error_code);
+            }
+
+            std::filesystem::path target_path = target_directory / filename;
+
+            auto schema = api::s_orm().describe_table(table_name);
+            std::string generated_code =
+                api::s_orm().generate_model_code(table_name, schema);
+
+            std::ofstream file_stream(target_path);
+
+            if (!file_stream.is_open())
+            {
+                std::println(stderr,
+                             "Error: Could not open file '{}' for writing.",
+                             target_path.string());
+
+                return EXIT_FAILURE;
+            }
+
+            file_stream << generated_code;
+            file_stream.close();
+
+            std::println("Model created successfully: {}",
+                         target_path.string());
+
+            return EXIT_SUCCESS;
+        }
+
+        if (!make_migration_name.empty())
+        {
+            std::string table_name = table_override;
+
+            if (table_name.empty())
+            {
+                std::string name_lower = make_migration_name;
+
+                std::transform(
+                    name_lower.begin(), name_lower.end(), name_lower.begin(),
+                    [](unsigned char character)
+                    { return static_cast<char>(std::tolower(character)); });
+
+                if (name_lower.starts_with("create_") &&
+                    name_lower.ends_with("_table") && name_lower.size() > 13)
+                {
+                    table_name = name_lower.substr(7, name_lower.size() - 13);
+                }
+                else if (name_lower.starts_with("create_") &&
+                         name_lower.size() > 7)
+                {
+                    table_name = name_lower.substr(7);
+                }
+                else
+                {
+                    table_name = api::class_to_table_name(make_migration_name);
+                }
+            }
+
+            auto current_time = std::chrono::system_clock::now();
+            std::time_t time_t_value =
+                std::chrono::system_clock::to_time_t(current_time);
+            std::tm time_structure{};
+
+            localtime_r(&time_t_value, &time_structure);
+
+            std::ostringstream prefix_stream;
+
+            prefix_stream << std::put_time(&time_structure, "%Y_%m_%d_%H%M%S");
+
+            std::filesystem::path target_directory(migrations_dir);
+            std::error_code error_code;
+
+            if (!std::filesystem::exists(target_directory, error_code))
+            {
+                std::filesystem::create_directories(target_directory,
+                                                    error_code);
+            }
+
+            std::string migration_filename = make_migration_name;
+
+            if (!migration_filename.ends_with(".lua"))
+            {
+                migration_filename =
+                    prefix_stream.str() + "_" + migration_filename + ".lua";
+            }
+
+            std::filesystem::path target_path =
+                target_directory / migration_filename;
+
+            auto schema = api::s_orm().describe_table(table_name);
+            std::string generated_code =
+                api::s_orm().generate_migration_code(table_name, schema);
+
+            std::ofstream file_stream(target_path);
+
+            if (!file_stream.is_open())
+            {
+                std::println(stderr,
+                             "Error: Could not open file '{}' for writing.",
+                             target_path.string());
+
+                return EXIT_FAILURE;
+            }
+
+            file_stream << generated_code;
+            file_stream.close();
+
+            std::println("Migration created successfully: {}",
+                         target_path.string());
+
+            return EXIT_SUCCESS;
+        }
+    }
 
     if (port_override > 0)
     {
-        cfg.port = static_cast<uint16_t>(port_override);
+        configuration.port = static_cast<uint16_t>(port_override);
     }
 
     if (no_dashboard)
     {
-        cfg.dashboard_enabled = false;
+        configuration.dashboard_enabled = false;
     }
 
     if (run_background)
     {
-        pid_t pid = fork();
+        pid_t process_id = fork();
 
-        if (pid < 0)
+        if (process_id < 0)
         {
-            std::println(stderr, "Failed to fork background process: {}", std::strerror(errno));
+            std::println(stderr, "Failed to fork background process: {}",
+                         std::strerror(errno));
 
             return EXIT_FAILURE;
         }
 
-        if (pid > 0)
+        if (process_id > 0)
         {
-            std::println("API-cli running in background (PID: {}, Port: {})", pid, cfg.port);
+            std::println("API-cli running in background (PID: {}, Port: {})",
+                         process_id, configuration.port);
 
             return EXIT_SUCCESS;
         }
 
         setsid();
 
-        int dev_null = open("/dev/null", O_RDWR);
+        int dev_null_file_descriptor = open("/dev/null", O_RDWR);
 
-        if (dev_null >= 0)
+        if (dev_null_file_descriptor >= 0)
         {
-            dup2(dev_null, STDIN_FILENO);
-            dup2(dev_null, STDOUT_FILENO);
-            dup2(dev_null, STDERR_FILENO);
+            dup2(dev_null_file_descriptor, STDIN_FILENO);
+            dup2(dev_null_file_descriptor, STDOUT_FILENO);
+            dup2(dev_null_file_descriptor, STDERR_FILENO);
 
-            if (dev_null > STDERR_FILENO)
+            if (dev_null_file_descriptor > STDERR_FILENO)
             {
-                close(dev_null);
+                close(dev_null_file_descriptor);
             }
         }
     }
 
-    api::init_logging(cfg);
+    api::init_logging(configuration);
 
     LOG_INFO("server", "Starting API-cli");
 
-    if (cfg.cache_enabled)
+    if (configuration.cache_enabled)
     {
-        api::s_cache_engine().set_max_items(cfg.cache_max_items);
+        api::s_cache_engine().set_max_items(configuration.cache_max_items);
         api::s_services().register_service<api::cache_engine>(
-            "cache",
-            std::shared_ptr<api::cache_engine>(
-                &api::s_cache_engine(),
-                [](api::cache_engine*)
-                {
-                }
-            )
-        );
+            "cache", std::shared_ptr<api::cache_engine>(
+                         &api::s_cache_engine(), [](api::cache_engine *) {}));
     }
 
-    api::s_thread_pool().start(cfg.worker_threads);
+    api::s_thread_pool().start(configuration.worker_threads);
 
-    auto& sm = api::s_script_mgr();
+    auto &script_manager = api::s_script_mgr();
 
-    sm.initialize();
-    sm.on_config_load(cfg);
+    script_manager.initialize();
+    script_manager.on_config_load(configuration);
 
     auto tracker = std::make_shared<api::connection_tracker>();
 
-    api::request_logger::set_tracker(tracker);
-    api::cors_handler::set_allowed_origins(cfg.cors_origins);
+    api::RequestLogger::set_tracker(tracker);
+    api::CorsHandler::set_allowed_origins(configuration.cors_origins);
 
     api::metrics_collector metrics;
 
     metrics.start();
 
-    api::lua_engine lua_eng;
+    api::lua_engine lua_engine_instance;
 
-    lua_eng.setup_package_path(cfg.scripts_dir);
-    lua_eng.bind_core_api(&metrics, tracker.get());
-    sm.on_lua_init(lua_eng);
+    lua_engine_instance.setup_package_path(configuration.scripts_dir);
+    lua_engine_instance.bind_core_api(&metrics, tracker.get(), &configuration);
+    script_manager.on_lua_init(lua_engine_instance);
 
-    api::api_server server(cfg);
-    api::router rtr(server, lua_eng);
+    api::api_server server(configuration);
+    api::router server_router(server, lua_engine_instance);
 
-    rtr.register_native_handler(
-        "core.health",
-        [](const crow::request& /*req*/)
-        {
-            return crow::response(200, "{\"status\":\"ok\"}");
-        }
-    );
+    server_router.register_native_handler(
+        "core.health", [](const crow::request & /*request*/)
+        { return crow::response(200, "{\"status\":\"ok\"}"); });
 
-    rtr.register_native_handler(
+    server_router.register_native_handler(
         "core.info",
-        [](const crow::request& /*req*/)
+        [](const crow::request & /*request*/)
         {
-            return crow::response(200, "{\"name\":\"API-cli\",\"version\":\"1.0.0\"}");
-        }
-    );
+            return crow::response(
+                200, "{\"name\":\"API-cli\",\"version\":\"1.0.0\"}");
+        });
 
-    rtr.register_native_handler(
+    server_router.register_native_handler(
         "core.stats",
-        [tracker](const crow::request& /*req*/)
+        [tracker](const crow::request & /*request*/)
         {
-            auto stats = tracker->get_stats();
-            crow::json::wvalue res;
+            auto tracker_stats = tracker->get_stats();
+            crow::json::wvalue response_json;
 
-            res["active_connections"] = stats.active_connections;
-            res["total_connections"] = stats.total_connections;
-            res["requests_per_second"] = stats.requests_per_second;
-            res["worker_threads"] = api::s_thread_pool().thread_count();
-            res["active_tasks"] = api::s_thread_pool().active_tasks();
-            res["pending_tasks"] = api::s_thread_pool().pending_tasks();
-            res["completed_tasks"] = api::s_thread_pool().completed_tasks();
+            response_json["active_connections"] =
+                tracker_stats.active_connections;
+            response_json["total_connections"] =
+                tracker_stats.total_connections;
+            response_json["requests_per_second"] =
+                tracker_stats.requests_per_second;
+            response_json["worker_threads"] =
+                api::s_thread_pool().thread_count();
+            response_json["active_tasks"] = api::s_thread_pool().active_tasks();
+            response_json["pending_tasks"] =
+                api::s_thread_pool().pending_tasks();
+            response_json["completed_tasks"] =
+                api::s_thread_pool().completed_tasks();
 
-            return crow::response(200, res);
-        }
-    );
+            return crow::response(200, response_json);
+        });
 
-    rtr.register_native_handler(
+    server_router.register_native_handler(
         "core.metrics",
-        [&metrics](const crow::request& /*req*/)
+        [&metrics](const crow::request & /*request*/)
         {
-            auto snap = metrics.get_snapshot();
-            auto cstats = api::s_cache_engine().get_stats();
-            crow::json::wvalue res;
+            auto snapshot = metrics.get_snapshot();
+            auto cache_statistics = api::s_cache_engine().get_stats();
+            crow::json::wvalue response_json;
 
-            res["cpu_usage_percent"] = snap.cpu_usage_percent;
-            res["memory_rss_bytes"] = snap.memory_rss_bytes;
-            res["memory_vsize_bytes"] = snap.memory_vsize_bytes;
-            res["thread_count"] = snap.thread_count;
-            res["open_fds"] = snap.open_fds;
-            res["net_rx_bytes_per_sec"] = snap.net_rx_bytes_per_sec;
-            res["net_tx_bytes_per_sec"] = snap.net_tx_bytes_per_sec;
-            res["cache_hits"] = cstats.hits;
-            res["cache_misses"] = cstats.misses;
-            res["cache_items"] = cstats.items;
-            res["cache_evictions"] = cstats.evictions;
-            res["cache_hit_ratio_percent"] = cstats.hit_ratio_percent;
+            response_json["cpu_usage_percent"] = snapshot.cpu_usage_percent;
+            response_json["memory_rss_bytes"] = snapshot.memory_rss_bytes;
+            response_json["memory_vsize_bytes"] = snapshot.memory_vsize_bytes;
+            response_json["thread_count"] = snapshot.thread_count;
+            response_json["open_fds"] = snapshot.open_fds;
+            response_json["net_rx_bytes_per_sec"] =
+                snapshot.net_rx_bytes_per_sec;
+            response_json["net_tx_bytes_per_sec"] =
+                snapshot.net_tx_bytes_per_sec;
+            response_json["cache_hits"] = cache_statistics.hits;
+            response_json["cache_misses"] = cache_statistics.misses;
+            response_json["cache_items"] = cache_statistics.items;
+            response_json["cache_evictions"] = cache_statistics.evictions;
+            response_json["cache_hit_ratio_percent"] =
+                cache_statistics.hit_ratio_percent;
 
-            return crow::response(200, res);
-        }
-    );
+            return crow::response(200, response_json);
+        });
 
-    sm.on_handlers_register(rtr);
+    script_manager.on_handlers_register(server_router);
 
     try
     {
-        rtr.load_routes(cfg.scripts_dir + "/routes.lua");
+        server_router.load_routes(configuration.scripts_dir + "/routes.lua");
     }
-    catch (const std::exception& e)
+    catch (const std::exception &exception)
     {
-        LOG_ERROR("routes", "Failed to load routes.lua: " << e.what());
+        LOG_ERROR("routes", "Failed to load routes.lua: " << exception.what());
     }
 
-    rtr.load_routes_from_dir(cfg.scripts_dir);
+    server_router.load_routes_from_dir(configuration.scripts_dir);
 
-    LOG_INFO("server", "Registered " << rtr.route_count() << " route(s)");
+    LOG_INFO("server",
+             "Registered " << server_router.route_count() << " route(s)");
 
     server.start();
 
-    LOG_INFO(
-        "server",
-        "Server listening on port " << cfg.port
-        << " with " << cfg.threads << " HTTP worker thread(s) and "
-        << cfg.worker_threads << " background task thread(s)"
-    );
+    LOG_INFO("server", "Server listening on port "
+                           << configuration.port << " with "
+                           << configuration.threads
+                           << " HTTP worker thread(s) and "
+                           << configuration.worker_threads
+                           << " background task thread(s)");
 
-    sm.on_server_startup(server);
+    script_manager.on_server_startup(server);
 
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    if (cfg.dashboard_enabled)
+    if (configuration.dashboard_enabled)
     {
-        api::dashboard dash(metrics, *tracker, api::get_log_ring_buffer(), &lua_eng);
+        api::dashboard terminal_dashboard(metrics, *tracker,
+                                          api::get_log_ring_buffer(),
+                                          &lua_engine_instance);
 
-        dash.run();
+        terminal_dashboard.run();
     }
     else
     {
@@ -271,7 +526,7 @@ int main(int argc, char* argv[])
 
     LOG_INFO("server", "Shutting down...");
 
-    sm.on_server_shutdown();
+    script_manager.on_server_shutdown();
     server.stop();
     metrics.stop();
     api::s_thread_pool().stop();

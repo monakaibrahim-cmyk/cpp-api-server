@@ -1,0 +1,56 @@
+name: Code Style Check
+
+on:
+  push:
+    branches:
+      - main
+      - development
+      - 'feature/**'
+      - 'bugfix/**'
+  pull_request:
+    branches:
+      - main
+      - development
+  workflow_dispatch:
+
+concurrency:
+  group: style-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-format:
+    name: C++ Code Style (clang-format)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install clang-format
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends clang-format
+
+      - name: Verify clang-format version
+        run: clang-format --version
+
+      - name: Inspect code style
+        run: |
+          echo "Scanning C++ headers and sources for style violations..."
+          FILES=$(find include src modules -type f \( -name "*.h" -o -name "*.cpp" \))
+
+          if [ -z "$FILES" ]; then
+            echo "No C++ files found to inspect."
+            exit 0
+          fi
+
+          echo "$FILES" | xargs clang-format --dry-run --Werror
+          STATUS=$?
+
+          if [ $STATUS -eq 0 ]; then
+            echo "All C++ files conform strictly to .clang-format specifications."
+          else
+            echo "Code formatting violations detected."
+            echo "To format automatically, run: find include src modules -type f \( -name \"*.h\" -o -name \"*.cpp\" \) | xargs clang-format -i"
+            exit $STATUS
+          fi

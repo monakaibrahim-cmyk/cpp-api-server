@@ -1,0 +1,30 @@
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Configuration for mod_jwt (OpenSSL Tokenization & Authentication Module)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+jwt = {
+    -- Signing and verification algorithm:
+    --   "RS256" : RSA with SHA-256 (requires private.pem and public.pem)
+    --   "ES256" : ECDSA P-256 with SHA-256 (requires EC private.pem and public.pem)
+    --   "HS256" : HMAC with SHA-256 (requires secret)
+    algorithm = "RS256",
+
+    -- Paths to PEM certificate files:
+    private_key = "config/certs/jwt_private.pem",
+    public_key = "config/certs/jwt_public.pem",
+
+    -- Optional passphrase for encrypted private keys
+    passphrase = "",
+
+    -- Shared secret for HS256 algorithm (fallback)
+    secret = "",
+
+    -- Token issuer claim ("iss")
+    issuer = "api-server",
+
+    -- Default token validity duration in seconds (3600 = 1 hour)
+    ttl = 3600,
+
+    -- Clock skew leeway tolerance in seconds
+    clock_tolerance = 60
+}

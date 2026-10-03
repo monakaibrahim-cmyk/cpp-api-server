@@ -1,0 +1,143 @@
+# API Framework
+
+High-performance, asynchronous C++ service framework featuring dynamic Lua scripting, an Eloquent-style ORM query builder with database scaffolding, an Apache `.htaccess` emulation layer, and a real-time terminal dashboard.
+
+## Overview
+
+The **API Framework** provides an enterprise-ready foundation for developing RESTful APIs and distributed microservices. It bridges low-latency C++ network I/O with high-level Lua scripting, allowing endpoints, middlewares, database models, and URL rewrite rules to be defined and updated dynamically without recompiling the core application.
+
+### Key Architecture Components
+
+- **Core Server & Routing**:
+  - Asynchronous event-driven HTTP listener powered by [Crow](https://crowcpp.org/).
+  - Thread-safe routing table supporting both native C++ handler callbacks and dynamic Lua route dispatching.
+  - Multi-threaded worker thread pool for background task offloading and asynchronous execution.
+  - Thread-safe dependency injection via `service_registry`.
+
+- **Dynamic Lua Engine**:
+  - Embedded Lua 5.4 runtime with [Sol2](https://github.com/ThePhD/sol2) bindings.
+  - Full exposure of developer-defined C++ classes, structs, namespaces, variables, and functions.
+  - Dynamic route registration (`route("GET", "/path", function(req, res) ... end)`).
+  - Dynamic file routing with automated prefix-based path resolution.
+
+- **Eloquent-Style ORM & Scaffolding**:
+  - Fluent query builder (`api::s_orm().table(...)` in C++ and `DB.table(...)` in Lua).
+  - Chainable queries supporting `select`, `where`, `join`, `order_by`, `limit`, `offset`, `group_by`, `insert`, `update`, `delete`, `increment`, and transactions.
+  - CLI scaffolding generator (`--db:scaffold`, `--make:model`, `--make:migration`) creating Lua models and migrations directly from database schema inspection.
+  - Pluggable database driver architecture with customizable database connector overrides.
+
+- **Apache `.htaccess` Emulation**:
+  - Native parser and evaluator for standard Apache configuration directives.
+  - Support for `RewriteEngine`, `RewriteCond`, `RewriteRule` (flags: `[L]`, `[R=301]`, `[F]`, `[G]`, `[NC]`, `[QSA]`).
+  - Security directives including `Order Allow,Deny`, `Deny from`, `Allow from`, and `Require ip`.
+  - HTTP response header manipulation (`Header set`, `Header append`, `Header unset`).
+  - Custom error handlers (`ErrorDocument 404 /err404.html`).
+  - Configurable priority: user-provided `.htaccess` takes precedence, falling back gracefully to Lua route configurations.
+
+- **Observability & Dashboard**:
+  - Interactive Terminal User Interface (TUI) powered by [FTXUI](https://github.com/ArthurSonzogni/FTXUI).
+  - Real-time CPU, virtual memory, resident memory, and system load sampling via Linux `/proc`.
+  - Sliding-window throughput tracking (requests per second, bytes in/out, HTTP status codes, latency percentiles).
+  - Ring buffer logging system with multi-channel severity filtering and live TUI streaming.
+  - LRU memory cache with thread-safe reader/writer locking and hit/miss eviction statistics.
+
+- **Modular Extension System**:
+  - Dynamic module registration using `API_REGISTER_MODULE` and `API_REGISTER_SCRIPT`.
+  - Comprehensive lifecycle hooks: `on_config_load`, `on_init`, `on_handlers_register`, `on_lua_init`, `on_request_override`, `on_before_request`, `on_after_request`, `on_server_startup`, and `on_server_shutdown`.
+  - Automated module generation utility via `./modules/create_module.sh`.
+
+---
+
+## Directory Structure
+
+```text
+.
+├── CMakeLists.txt              # Primary CMake build configuration (C++26)
+├── Doxyfile                    # Doxygen configuration using Doxygen Awesome CSS
+├── config/
+│   ├── server.lua              # Server runtime configuration
+│   └── .htaccess.dist          # Sample Apache .htaccess configuration
+├── docs/
+│   ├── header.html             # Custom HTML header enabling Awesome extensions
+│   ├── custom.css              # Custom brand styling and typography overrides
+│   └── doxygen-awesome-css/    # Modern Doxygen theme assets & JavaScript extensions
+├── include/
+│   └── api/                    # Core C++ public API headers (.h)
+│       ├── cache.h             # Thread-safe LRU cache with shared_mutex
+│       ├── config.h            # ServerConfig and Lua configuration loader
+│       ├── connection_tracker.h# Sliding-window connection and traffic metrics
+│       ├── dashboard.h         # FTXUI interactive terminal dashboard
+│       ├── db_driver.h         # Abstract database driver interface & value variants
+│       ├── htaccess.h          # Apache .htaccess directive parser & evaluator
+│       ├── logger.h            # Boost.Log severity channel logger and ring buffer
+│       ├── lua_binding.h       # Sol2 namespace and usertype binding utilities
+│       ├── lua_engine.h        # Embedded Lua 5.4 state and script engine
+│       ├── metrics.h           # System resource and CPU/memory sampler
+│       ├── middleware.h        # Crow HTTP middlewares (CORS, htaccess, metrics)
+│       ├── module.h            # Modular extension component base alias
+│       ├── module_registry.h   # Module discovery registry
+│       ├── orm.h               # Eloquent ORM engine and fluent query builder
+│       ├── router.h            # Unified C++ and Lua HTTP request router
+│       ├── script_mgr.h        # Central lifecycle hook manager and dispatchers
+│       ├── server.h            # Asynchronous Crow HTTP server wrapper
+│       ├── service_registry.h  # Thread-safe dependency injection service locator
+│       └── thread_pool.h       # Asynchronous FIFO worker thread pool
+├── modules/
+│   ├── create_module.sh        # Shell script to scaffold new C++ modules
+│   ├── mod_orm/                # Pluggable ORM module implementing database drivers
+│   └── mod_template/           # Template module illustrating class & struct Lua bindings
+├── scripts/
+│   ├── routes.lua              # Application HTTP routes defined in Lua
+│   ├── models/                 # Eloquent database models in Lua
+│   └── migrations/             # Database migration scripts in Lua
+└── src/                        # Core C++ implementation sources (.cpp)
+    ├── core/                   # Core infrastructure (cache, config, logger, metrics, orm)
+    ├── dashboard/              # FTXUI dashboard rendering logic
+    ├── scripting/              # Lua engine and script manager implementations
+    └── server/                 # Crow server, connection tracker, and routing logic
+```
+
+---
+
+## Building the Project
+
+### Prerequisites
+
+- Modern C++ compiler with C++26 support (e.g. GCC 14+ or Clang 19+)
+- CMake 3.25+
+- Boost libraries (Log, Thread, System)
+- Doxygen 1.9.5+ and Graphviz (`dot`) for documentation generation
+
+### Compilation
+
+```bash
+# Generate build configuration
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+# Compile all targets
+cmake --build build -j$(nproc)
+```
+
+---
+
+## Running the Server
+
+```bash
+# Launch server with interactive FTXUI dashboard (default)
+./build/API-cli
+
+# Run in background daemon / headless mode
+./build/API-cli --headless
+
+# Run in foreground without terminal UI (standard console logs)
+./build/API-cli --no-dashboard
+
+# Override listening port and configuration path
+./build/API-cli --config config/server.lua --port 8080
+```
+
+---
+
+## License
+
+This project is licensed under the terms described in the [LICENSE](LICENSE) file.

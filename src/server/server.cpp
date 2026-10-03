@@ -1,18 +1,15 @@
-#include "api/server.hpp"
-#include "api/logger.hpp"
+#include "api/server.h"
+#include "api/logger.h"
 
 namespace api
 {
 
-api_server::api_server(const server_config& cfg)
-    : config_(cfg)
+api_server::api_server(const ServerConfig &configuration)
+    : configuration_(configuration)
 {
 }
 
-api_server::~api_server()
-{
-    stop();
-}
+api_server::~api_server() { stop(); }
 
 void api_server::start()
 {
@@ -24,15 +21,10 @@ void api_server::start()
     running_.store(true);
 
     app_.signal_clear();
-    app_.port(config_.port).concurrency(config_.threads);
+    app_.port(configuration_.port).concurrency(configuration_.threads);
     app_.loglevel(crow::LogLevel::Warning);
 
-    server_thread_ = std::thread(
-        [this]()
-        {
-            app_.run();
-        }
-    );
+    server_thread_ = std::thread([this]() { app_.run(); });
 }
 
 void api_server::stop()
@@ -52,14 +44,8 @@ void api_server::stop()
     running_.store(false);
 }
 
-bool api_server::is_running() const
-{
-    return running_.load();
-}
+bool api_server::is_running() const { return running_.load(); }
 
-api_app_t& api_server::app()
-{
-    return app_;
-}
+api_app_t &api_server::app() { return app_; }
 
 } // namespace api

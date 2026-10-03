@@ -1,0 +1,8 @@
+-- mod_orm configuration
+-- Pluggable Scaffold ORM Module
+-- Developers can implement and register custom database drivers (MySQL, PostgreSQL, SQLite, etc.)
+mod_orm = {
+    enabled = true,
+    driver = "", -- e.g. "mysql", "postgres", "sqlite" (registered by developer's driver module)
+    connection = "", -- database connection string or path
+}

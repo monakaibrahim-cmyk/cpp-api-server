@@ -1,0 +1,25 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# API Server - .htaccess Configuration & Policy
+# Evaluated natively by api::htaccess_engine and accessible in Lua scripts
+# ═══════════════════════════════════════════════════════════════════════════
+
+RewriteEngine On
+
+# ── Security Response Headers ───────────────────────────────────────────────
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "DENY"
+Header set X-XSS-Protection "1; mode=block"
+
+# ── IP Access Control ───────────────────────────────────────────────────────
+Order allow,deny
+Allow from all
+
+# ── Custom Error Documents ──────────────────────────────────────────────────
+ErrorDocument 403 {"error":"Forbidden by .htaccess security policy","status":403}
+ErrorDocument 404 {"error":"Resource not found","status":404}
+ErrorDocument 410 {"error":"Resource is permanently gone","status":410}
+
+# ── URL Rewriting & Redirection Rules ───────────────────────────────────────
+# Example: Redirect legacy endpoints
+# Redirect 301 /api/v0/health /api/health
+# RewriteRule ^/v1/(.*)$ /api/$1 [L]
