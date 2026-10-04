@@ -411,7 +411,7 @@ message(STATUS "[Dependency] Fetching FTXUI")
 FetchContent_Declare(
     ftxui
     GIT_REPOSITORY https://github.com/ArthurSonzogni/ftxui.git
-    GIT_TAG v5.0.0
+    GIT_TAG v7.0.3
     GIT_SHALLOW TRUE
 )
 
@@ -445,15 +445,15 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Crow)
 
-# Lua 5.4
+# Lua 5.5.1
 
-message(STATUS "[Dependency] Fetching Lua 5.4.7")
+message(STATUS "[Dependency] Fetching Lua 5.5.1")
 
 cmake_policy(SET CMP0169 OLD)
 
 FetchContent_Declare(
     lua
-    URL https://codeload.github.com/lua/lua/tar.gz/refs/tags/v5.4.7
+    URL https://codeload.github.com/lua/lua/tar.gz/refs/tags/v5.5.1
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
@@ -527,7 +527,7 @@ message(STATUS "[Dependency] Fetching sol2")
 
 FetchContent_Declare(
     sol2
-    URL https://codeload.github.com/ThePhD/sol2/tar.gz/refs/tags/v3.3.1
+    URL https://codeload.github.com/ThePhD/sol2/tar.gz/refs/tags/v3.5.0
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
