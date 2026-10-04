@@ -1,12 +1,12 @@
-#include "api/lua_engine.h"
-#include "api/cache.h"
-#include "api/config.h"
-#include "api/connection_tracker.h"
-#include "api/htaccess.h"
-#include "api/logger.h"
-#include "api/metrics.h"
-#include "api/script_mgr.h"
-#include "api/thread_pool.h"
+#include <scripting/lua_engine.h>
+#include <core/cache.h>
+#include <core/config.h>
+#include <server/connection_tracker.h>
+#include <core/htaccess.h>
+#include <core/logger.h>
+#include <core/metrics.h>
+#include <scripting/script_mgr.h>
+#include <core/thread_pool.h>
 
 #include <filesystem>
 #include <iomanip>
@@ -140,6 +140,8 @@ void lua_engine::bind_core_api(metrics_collector *metrics_collector_instance,
         "connection_stats", sol::constructors<ConnectionStats()>(),
         "active_connections", &ConnectionStats::active_connections,
         "total_connections", &ConnectionStats::total_connections,
+        "total_received_bytes", &ConnectionStats::total_received_bytes,
+        "total_transmitted_bytes", &ConnectionStats::total_transmitted_bytes,
         "requests_per_second", &ConnectionStats::requests_per_second);
 
     lua_.new_usertype<SystemSnapshot>(
@@ -150,7 +152,9 @@ void lua_engine::bind_core_api(metrics_collector *metrics_collector_instance,
         "thread_count", &SystemSnapshot::thread_count, "open_fds",
         &SystemSnapshot::open_fds, "net_rx_bytes_per_sec",
         &SystemSnapshot::net_rx_bytes_per_sec, "net_tx_bytes_per_sec",
-        &SystemSnapshot::net_tx_bytes_per_sec);
+        &SystemSnapshot::net_tx_bytes_per_sec, "net_rx_total_bytes",
+        &SystemSnapshot::net_rx_total_bytes, "net_tx_total_bytes",
+        &SystemSnapshot::net_tx_total_bytes);
 
     lua_.new_usertype<CachedResponse>(
         "cached_response", sol::constructors<CachedResponse()>(), "status_code",
@@ -267,6 +271,8 @@ void lua_engine::bind_core_api(metrics_collector *metrics_collector_instance,
             result_table["open_fds"] = snapshot.open_fds;
             result_table["net_rx_bytes_sec"] = snapshot.net_rx_bytes_per_sec;
             result_table["net_tx_bytes_sec"] = snapshot.net_tx_bytes_per_sec;
+            result_table["net_rx_total_bytes"] = snapshot.net_rx_total_bytes;
+            result_table["net_tx_total_bytes"] = snapshot.net_tx_total_bytes;
 
             return result_table;
         };

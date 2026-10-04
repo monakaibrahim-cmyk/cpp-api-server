@@ -1,12 +1,12 @@
-#include "mod_template.h"
+#include <mod_template.h>
 
-#include "api/config.h"
-#include "api/logger.h"
-#include "api/lua_binding.h"
-#include "api/lua_engine.h"
-#include "api/module_registry.h"
-#include "api/router.h"
-#include "api/service_registry.h"
+#include <core/config.h>
+#include <core/logger.h>
+#include <scripting/lua_binding.h>
+#include <scripting/lua_engine.h>
+#include <core/module_registry.h>
+#include <server/router.h>
+#include <core/service_registry.h>
 
 #include <crow.h>
 

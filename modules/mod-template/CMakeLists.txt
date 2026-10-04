@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(MOD_NAME mod_orm)
+set(MOD_NAME mod-template)
 
 file(GLOB_RECURSE MOD_SOURCES CONFIGURE_DEPENDS
     src/*.cpp

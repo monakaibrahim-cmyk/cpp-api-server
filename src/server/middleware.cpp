@@ -1,7 +1,8 @@
-#include "api/middleware.h"
-#include "api/connection_tracker.h"
-#include "api/logger.h"
-#include "api/script_mgr.h"
+#include <server/middleware.h>
+#include <server/connection_tracker.h>
+#include <core/logger.h>
+#include <core/metrics.h>
+#include <scripting/script_mgr.h>
 
 #include <iomanip>
 
@@ -10,6 +11,46 @@ namespace api
 
 std::shared_ptr<connection_tracker> RequestLogger::static_tracker_ = nullptr;
 std::vector<std::string> CorsHandler::static_allowed_origins_ = {"*"};
+
+static size_t calculate_incoming_request_bytes(const crow::request &request)
+{
+    size_t byte_count = crow::method_name(request.method).size() + 1 +
+                        (request.raw_url.empty() ? request.url.size()
+                                                 : request.raw_url.size()) +
+                        11;
+
+    for (const auto &header_pair : request.headers)
+    {
+        byte_count +=
+            header_pair.first.size() + 2 + header_pair.second.size() + 2;
+    }
+
+    byte_count += 2;
+    byte_count += request.body.size();
+
+    return byte_count;
+}
+
+static size_t calculate_outgoing_response_bytes(const crow::response &response)
+{
+    size_t byte_count = 12;
+
+    for (const auto &header_pair : response.headers)
+    {
+        byte_count +=
+            header_pair.first.size() + 2 + header_pair.second.size() + 2;
+    }
+
+    if (response.headers.find("Content-Length") == response.headers.end())
+    {
+        byte_count += 16 + std::to_string(response.body.size()).size() + 2;
+    }
+
+    byte_count += 2;
+    byte_count += response.body.size();
+
+    return byte_count;
+}
 
 static std::string resolve_remote_ip(const crow::request &request)
 {
@@ -56,6 +97,11 @@ void RequestLogger::before_handle(crow::request &request,
 {
     middleware_context.start_time = std::chrono::steady_clock::now();
 
+    size_t incoming_bytes = calculate_incoming_request_bytes(request);
+
+    middleware_context.received_bytes = incoming_bytes;
+    metrics_collector::record_received_bytes(incoming_bytes);
+
     if (static_tracker_)
     {
         std::string host_name = request.get_header_value("Host");
@@ -72,7 +118,7 @@ void RequestLogger::before_handle(crow::request &request,
 
         middleware_context.connection_id = static_tracker_->on_request_start(
             client_ip_address, crow::method_name(request.method), request.url,
-            complete_url);
+            complete_url, incoming_bytes);
     }
 
     if (s_script_mgr().on_request_override(request, response))
@@ -99,15 +145,19 @@ void RequestLogger::after_handle(crow::request &request,
                                     .count();
     }
 
+    size_t outgoing_bytes = calculate_outgoing_response_bytes(response);
+
+    metrics_collector::record_transmitted_bytes(outgoing_bytes);
+
     std::string client_ip_address = resolve_remote_ip(request);
 
     if (static_tracker_)
     {
         if (middleware_context.connection_id != 0)
         {
-            static_tracker_->on_request_end(middleware_context.connection_id,
-                                            response.code,
-                                            duration_milliseconds);
+            static_tracker_->on_request_end(
+                middleware_context.connection_id, response.code,
+                duration_milliseconds, outgoing_bytes);
             middleware_context.connection_id = 0;
         }
         else
@@ -125,8 +175,8 @@ void RequestLogger::after_handle(crow::request &request,
 
             static_tracker_->record_completed_request(
                 client_ip_address, crow::method_name(request.method),
-                request.url, complete_url, response.code,
-                duration_milliseconds);
+                request.url, complete_url, response.code, duration_milliseconds,
+                middleware_context.received_bytes, outgoing_bytes);
         }
     }
 

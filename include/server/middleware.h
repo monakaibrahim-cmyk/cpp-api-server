@@ -43,6 +43,9 @@ struct RequestLogger
         /** @brief Active connection tracking identifier assigned by @ref
          * connection_tracker. */
         uint64_t connection_id = 0;
+
+        /** @brief Inbound request wire bytes calculated upon arrival. */
+        size_t received_bytes = 0;
     };
 
     /// Backward compatibility alias

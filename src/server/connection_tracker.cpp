@@ -1,4 +1,4 @@
-#include "api/connection_tracker.h"
+#include <server/connection_tracker.h>
 
 #include <chrono>
 #include <cstdio>
@@ -35,12 +35,19 @@ connection_tracker::connection_tracker(size_t history_capacity)
 uint64_t connection_tracker::on_request_start(const std::string &remote_ip,
                                               const std::string &method,
                                               const std::string &url,
-                                              const std::string &full_url)
+                                              const std::string &full_url,
+                                              size_t received_bytes)
 {
     uint64_t id = next_id_.fetch_add(1, std::memory_order_relaxed);
 
     active_.fetch_add(1, std::memory_order_relaxed);
     total_.fetch_add(1, std::memory_order_relaxed);
+
+    if (received_bytes > 0)
+    {
+        total_received_bytes_.fetch_add(received_bytes,
+                                        std::memory_order_relaxed);
+    }
 
     ConnectionRecord record;
 
@@ -54,6 +61,8 @@ uint64_t connection_tracker::on_request_start(const std::string &remote_ip,
     record.status_code = 0;
     record.duration_ms = 0.0;
     record.in_flight = true;
+    record.received_bytes = received_bytes;
+    record.transmitted_bytes = 0;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -86,11 +95,18 @@ void connection_tracker::decrement_active()
 }
 
 void connection_tracker::on_request_end(uint64_t id, int status_code,
-                                        double duration_milliseconds)
+                                        double duration_milliseconds,
+                                        size_t transmitted_bytes)
 {
     if (id == 0)
     {
         return;
+    }
+
+    if (transmitted_bytes > 0)
+    {
+        total_transmitted_bytes_.fetch_add(transmitted_bytes,
+                                           std::memory_order_relaxed);
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
@@ -104,6 +120,7 @@ void connection_tracker::on_request_end(uint64_t id, int status_code,
             {
                 iterator->status_code = status_code;
                 iterator->duration_ms = duration_milliseconds;
+                iterator->transmitted_bytes = transmitted_bytes;
                 iterator->in_flight = false;
                 endpoint_hits_[iterator->url]++;
 
@@ -115,16 +132,27 @@ void connection_tracker::on_request_end(uint64_t id, int status_code,
     }
 }
 
-void connection_tracker::record_completed_request(const std::string &remote_ip,
-                                                  const std::string &method,
-                                                  const std::string &url,
-                                                  const std::string &full_url,
-                                                  int status_code,
-                                                  double duration_milliseconds)
+void connection_tracker::record_completed_request(
+    const std::string &remote_ip, const std::string &method,
+    const std::string &url, const std::string &full_url, int status_code,
+    double duration_milliseconds, size_t received_bytes,
+    size_t transmitted_bytes)
 {
     uint64_t id = next_id_.fetch_add(1, std::memory_order_relaxed);
 
     total_.fetch_add(1, std::memory_order_relaxed);
+
+    if (received_bytes > 0)
+    {
+        total_received_bytes_.fetch_add(received_bytes,
+                                        std::memory_order_relaxed);
+    }
+
+    if (transmitted_bytes > 0)
+    {
+        total_transmitted_bytes_.fetch_add(transmitted_bytes,
+                                           std::memory_order_relaxed);
+    }
 
     ConnectionRecord record;
 
@@ -138,6 +166,8 @@ void connection_tracker::record_completed_request(const std::string &remote_ip,
     record.status_code = status_code;
     record.duration_ms = duration_milliseconds;
     record.in_flight = false;
+    record.received_bytes = received_bytes;
+    record.transmitted_bytes = transmitted_bytes;
 
     std::lock_guard<std::mutex> lock(mutex_);
 
@@ -156,11 +186,18 @@ uint64_t connection_tracker::on_outgoing_start(const std::string &remote_ip,
                                                uint16_t remote_port,
                                                const std::string &method,
                                                const std::string &target,
-                                               const std::string &full_url)
+                                               const std::string &full_url,
+                                               size_t transmitted_bytes)
 {
     uint64_t id = next_id_.fetch_add(1, std::memory_order_relaxed);
 
     active_.fetch_add(1, std::memory_order_relaxed);
+
+    if (transmitted_bytes > 0)
+    {
+        total_transmitted_bytes_.fetch_add(transmitted_bytes,
+                                           std::memory_order_relaxed);
+    }
 
     ConnectionRecord record;
 
@@ -175,6 +212,8 @@ uint64_t connection_tracker::on_outgoing_start(const std::string &remote_ip,
     record.status_code = 0;
     record.duration_ms = 0.0;
     record.in_flight = true;
+    record.received_bytes = 0;
+    record.transmitted_bytes = transmitted_bytes;
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -191,11 +230,18 @@ uint64_t connection_tracker::on_outgoing_start(const std::string &remote_ip,
 }
 
 void connection_tracker::on_outgoing_end(uint64_t id, int status_code,
-                                         double duration_milliseconds)
+                                         double duration_milliseconds,
+                                         size_t received_bytes)
 {
     if (id == 0)
     {
         return;
+    }
+
+    if (received_bytes > 0)
+    {
+        total_received_bytes_.fetch_add(received_bytes,
+                                        std::memory_order_relaxed);
     }
 
     std::lock_guard<std::mutex> lock(mutex_);
@@ -209,6 +255,7 @@ void connection_tracker::on_outgoing_end(uint64_t id, int status_code,
             {
                 iterator->status_code = status_code;
                 iterator->duration_ms = duration_milliseconds;
+                iterator->received_bytes = received_bytes;
                 iterator->in_flight = false;
 
                 decrement_active();
@@ -225,6 +272,10 @@ ConnectionStats connection_tracker::get_stats() const
 
     statistics.active_connections = active_.load(std::memory_order_relaxed);
     statistics.total_connections = total_.load(std::memory_order_relaxed);
+    statistics.total_received_bytes =
+        total_received_bytes_.load(std::memory_order_relaxed);
+    statistics.total_transmitted_bytes =
+        total_transmitted_bytes_.load(std::memory_order_relaxed);
 
     std::lock_guard<std::mutex> lock(mutex_);
     auto now = std::chrono::steady_clock::now();

@@ -1,8 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(MOD_NAME mod_jwt)
-
-find_package(OpenSSL REQUIRED)
+set(MOD_NAME mod-orm)
 
 file(GLOB_RECURSE MOD_SOURCES CONFIGURE_DEPENDS
     src/*.cpp
@@ -16,11 +14,9 @@ target_include_directories(${MOD_NAME} PUBLIC
     include
     ${CMAKE_SOURCE_DIR}/include
     ${sol2_SOURCE_DIR}/include
-    ${OPENSSL_INCLUDE_DIR}
 )
 
 target_link_libraries(${MOD_NAME} PUBLIC
     Crow::Crow
     lua_lib
-    OpenSSL::Crypto
 )

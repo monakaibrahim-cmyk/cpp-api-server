@@ -1,15 +1,57 @@
-#include "api/metrics.h"
+#include <core/metrics.h>
 
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 namespace api
 {
+
+static std::atomic<size_t> global_process_received_bytes{0};
+static std::atomic<size_t> global_process_transmitted_bytes{0};
+
+void metrics_collector::record_received_bytes(size_t bytes)
+{
+    global_process_received_bytes.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+void metrics_collector::record_transmitted_bytes(size_t bytes)
+{
+    global_process_transmitted_bytes.fetch_add(bytes,
+                                               std::memory_order_relaxed);
+}
+
+void metrics_collector::record_network_bytes(size_t received_bytes,
+                                             size_t transmitted_bytes)
+{
+    if (received_bytes > 0)
+    {
+        global_process_received_bytes.fetch_add(received_bytes,
+                                                std::memory_order_relaxed);
+    }
+
+    if (transmitted_bytes > 0)
+    {
+        global_process_transmitted_bytes.fetch_add(transmitted_bytes,
+                                                   std::memory_order_relaxed);
+    }
+}
+
+void metrics_collector::record_rx_bytes(size_t bytes)
+{
+    record_received_bytes(bytes);
+}
+
+void metrics_collector::record_tx_bytes(size_t bytes)
+{
+    record_transmitted_bytes(bytes);
+}
 
 metrics_collector::metrics_collector() = default;
 
@@ -67,58 +109,119 @@ void metrics_collector::collect_loop()
 
 void metrics_collector::read_cpu(SystemSnapshot &snapshot)
 {
-    std::ifstream proc_stat_file("/proc/stat");
+    uint64_t current_cpu_time_nanoseconds = 0;
+    bool time_retrieved = false;
 
-    if (!proc_stat_file.is_open())
+#if defined(CLOCK_PROCESS_CPUTIME_ID)
+    struct timespec process_time_specification;
+
+    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &process_time_specification) ==
+        0)
+    {
+        current_cpu_time_nanoseconds =
+            static_cast<uint64_t>(process_time_specification.tv_sec) *
+                1000000000ULL +
+            static_cast<uint64_t>(process_time_specification.tv_nsec);
+        time_retrieved = true;
+    }
+#endif
+
+    if (!time_retrieved)
+    {
+        std::ifstream proc_stat_file("/proc/self/stat");
+
+        if (proc_stat_file.is_open())
+        {
+            std::string file_content;
+
+            if (std::getline(proc_stat_file, file_content))
+            {
+                auto closing_parenthesis_position = file_content.rfind(')');
+
+                if (closing_parenthesis_position != std::string::npos &&
+                    closing_parenthesis_position + 2 < file_content.size())
+                {
+                    std::istringstream stream(
+                        file_content.substr(closing_parenthesis_position + 2));
+                    std::string dummy_field;
+
+                    for (int field_index = 0; field_index < 11; ++field_index)
+                    {
+                        stream >> dummy_field;
+                    }
+
+                    size_t user_time_ticks = 0;
+                    size_t system_time_ticks = 0;
+
+                    if (stream >> user_time_ticks >> system_time_ticks)
+                    {
+                        long ticks_per_second = sysconf(_SC_CLK_TCK);
+
+                        if (ticks_per_second <= 0)
+                        {
+                            ticks_per_second = 100;
+                        }
+
+                        current_cpu_time_nanoseconds =
+                            ((user_time_ticks + system_time_ticks) *
+                             1000000000ULL) /
+                            static_cast<uint64_t>(ticks_per_second);
+                        time_retrieved = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if (!time_retrieved)
     {
         return;
     }
 
-    std::string line;
+    auto current_wall_time = std::chrono::steady_clock::now();
 
-    if (!std::getline(proc_stat_file, line))
+    if (previous_cpu_time_nanoseconds_ > 0 &&
+        previous_sample_time_.time_since_epoch().count() > 0)
     {
-        return;
+        auto wall_time_delta_nanoseconds =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                current_wall_time - previous_sample_time_)
+                .count();
+
+        int64_t cpu_time_delta_nanoseconds = static_cast<int64_t>(
+            current_cpu_time_nanoseconds - previous_cpu_time_nanoseconds_);
+
+        if (wall_time_delta_nanoseconds > 0 && cpu_time_delta_nanoseconds >= 0)
+        {
+            unsigned int hardware_concurrency =
+                std::thread::hardware_concurrency();
+
+            if (hardware_concurrency == 0)
+            {
+                hardware_concurrency = 1;
+            }
+
+            double cpu_percentage =
+                (static_cast<double>(cpu_time_delta_nanoseconds) /
+                 (static_cast<double>(wall_time_delta_nanoseconds) *
+                  static_cast<double>(hardware_concurrency))) *
+                100.0;
+
+            if (cpu_percentage < 0.0)
+            {
+                cpu_percentage = 0.0;
+            }
+            else if (cpu_percentage > 100.0)
+            {
+                cpu_percentage = 100.0;
+            }
+
+            snapshot.cpu_usage_percent = cpu_percentage;
+        }
     }
 
-    std::istringstream line_stream(line);
-    std::string label;
-
-    line_stream >> label;
-
-    size_t total = 0;
-    size_t idle = 0;
-    size_t field_value = 0;
-
-    for (int index = 0; line_stream >> field_value; ++index)
-    {
-        total += field_value;
-
-        if (index == 3)
-        {
-            idle = field_value;
-        }
-        else if (index == 4)
-        {
-            idle += field_value;
-        }
-    }
-
-    if (prev_cpu_total_ > 0)
-    {
-        auto total_delta = total - prev_cpu_total_;
-        auto idle_delta = idle - prev_cpu_idle_;
-
-        if (total_delta > 0)
-        {
-            snapshot.cpu_usage_percent =
-                100.0 * (1.0 - static_cast<double>(idle_delta) /
-                                   static_cast<double>(total_delta));
-        }
-    }
-
-    prev_cpu_total_ = total;
-    prev_cpu_idle_ = idle;
+    previous_cpu_time_nanoseconds_ = current_cpu_time_nanoseconds;
+    previous_sample_time_ = current_wall_time;
 }
 
 void metrics_collector::read_memory(SystemSnapshot &snapshot)
@@ -202,67 +305,29 @@ void metrics_collector::read_open_fds(SystemSnapshot &snapshot)
 
 void metrics_collector::read_network(SystemSnapshot &snapshot)
 {
-    std::ifstream proc_net_file("/proc/net/dev");
+    size_t current_received_bytes =
+        global_process_received_bytes.load(std::memory_order_relaxed);
+    size_t current_transmitted_bytes =
+        global_process_transmitted_bytes.load(std::memory_order_relaxed);
 
-    if (!proc_net_file.is_open())
-    {
-        return;
-    }
+    snapshot.net_rx_total_bytes = current_received_bytes;
+    snapshot.net_tx_total_bytes = current_transmitted_bytes;
 
-    std::string line;
-
-    std::getline(proc_net_file, line);
-    std::getline(proc_net_file, line);
-
-    size_t total_rx = 0;
-    size_t total_tx = 0;
-
-    while (std::getline(proc_net_file, line))
-    {
-        std::istringstream line_stream(line);
-        std::string interface_name;
-
-        line_stream >> interface_name;
-
-        if (!interface_name.empty() && interface_name.back() == ':')
-        {
-            interface_name.pop_back();
-        }
-
-        if (interface_name == "lo")
-        {
-            continue;
-        }
-
-        size_t rx_bytes = 0;
-
-        line_stream >> rx_bytes;
-
-        size_t skip_value = 0;
-
-        for (int i = 0; i < 7; ++i)
-        {
-            line_stream >> skip_value;
-        }
-
-        size_t tx_bytes = 0;
-
-        line_stream >> tx_bytes;
-
-        total_rx += rx_bytes;
-        total_tx += tx_bytes;
-    }
-
-    if (prev_rx_bytes_ > 0 || prev_tx_bytes_ > 0)
+    if (has_sampled_network_)
     {
         snapshot.net_rx_bytes_per_sec =
-            (total_rx >= prev_rx_bytes_) ? (total_rx - prev_rx_bytes_) : 0;
+            (current_received_bytes >= previous_received_bytes_)
+                ? (current_received_bytes - previous_received_bytes_)
+                : 0;
         snapshot.net_tx_bytes_per_sec =
-            (total_tx >= prev_tx_bytes_) ? (total_tx - prev_tx_bytes_) : 0;
+            (current_transmitted_bytes >= previous_transmitted_bytes_)
+                ? (current_transmitted_bytes - previous_transmitted_bytes_)
+                : 0;
     }
 
-    prev_rx_bytes_ = total_rx;
-    prev_tx_bytes_ = total_tx;
+    previous_received_bytes_ = current_received_bytes;
+    previous_transmitted_bytes_ = current_transmitted_bytes;
+    has_sampled_network_ = true;
 }
 
 } // namespace api

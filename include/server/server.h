@@ -3,8 +3,8 @@
 #include <atomic>
 #include <thread>
 
-#include "api/config.h"
-#include "api/middleware.h"
+#include <core/config.h>
+#include <server/middleware.h>
 
 namespace api
 {

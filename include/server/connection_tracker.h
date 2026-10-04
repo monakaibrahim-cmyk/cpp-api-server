@@ -70,6 +70,12 @@ struct ConnectionRecord
     /** @brief Indicates whether the request is actively being processed on a
      * worker thread. */
     bool in_flight = true;
+
+    /** @brief Number of payload and protocol wire bytes received. */
+    size_t received_bytes = 0;
+
+    /** @brief Number of payload and protocol wire bytes transmitted. */
+    size_t transmitted_bytes = 0;
 };
 
 /// Backward compatibility alias
@@ -89,6 +95,14 @@ struct ConnectionStats
     /** @brief Current rolling request throughput rate measured in requests per
      * second. */
     double requests_per_second = 0.0;
+
+    /** @brief Cumulative inbound network bytes received across all connections.
+     */
+    size_t total_received_bytes = 0;
+
+    /** @brief Cumulative outbound network bytes transmitted across all
+     * connections. */
+    size_t total_transmitted_bytes = 0;
 
     /** @brief Cumulative hit frequency mapping partitioned by endpoint URI
      * path. */
@@ -155,7 +169,8 @@ class connection_tracker
      */
     uint64_t on_request_start(const std::string &remote_ip,
                               const std::string &method, const std::string &url,
-                              const std::string &full_url = "");
+                              const std::string &full_url = "",
+                              size_t received_bytes = 0);
 
     /**
      * @brief Marks an in-flight request as completed and records its latency
@@ -167,9 +182,12 @@ class connection_tracker
      * 404).
      * @param[in] duration_milliseconds Total processing elapsed time in
      * milliseconds.
+     * @param[in] transmitted_bytes Total response wire bytes sent to the
+     * client.
      */
     void on_request_end(uint64_t id, int status_code,
-                        double duration_milliseconds);
+                        double duration_milliseconds,
+                        size_t transmitted_bytes = 0);
 
     /**
      * @brief Directly records an already-completed HTTP request into history.
@@ -183,12 +201,16 @@ class connection_tracker
      * @param[in] full_url Complete URL string.
      * @param[in] status_code Final HTTP status code.
      * @param[in] duration_milliseconds Total elapsed time in milliseconds.
+     * @param[in] received_bytes Inbound wire bytes.
+     * @param[in] transmitted_bytes Outbound wire bytes.
      */
     void record_completed_request(const std::string &remote_ip,
                                   const std::string &method,
                                   const std::string &url,
                                   const std::string &full_url, int status_code,
-                                  double duration_milliseconds);
+                                  double duration_milliseconds,
+                                  size_t received_bytes = 0,
+                                  size_t transmitted_bytes = 0);
 
     /**
      * @brief Records the start of an outbound client connection made by the
@@ -199,12 +221,14 @@ class connection_tracker
      * @param[in] method HTTP method string.
      * @param[in] target Destination endpoint path.
      * @param[in] full_url Full target URL.
+     * @param[in] transmitted_bytes Outbound wire bytes.
      * @return uint64_t Assigned connection identifier.
      */
     uint64_t on_outgoing_start(const std::string &remote_ip,
                                uint16_t remote_port, const std::string &method,
                                const std::string &target,
-                               const std::string &full_url = "");
+                               const std::string &full_url = "",
+                               size_t transmitted_bytes = 0);
 
     /**
      * @brief Records completion of an outbound client request.
@@ -213,9 +237,11 @@ class connection_tracker
      * @param[in] status_code HTTP status code returned by remote server.
      * @param[in] duration_milliseconds Total round-trip latency in
      * milliseconds.
+     * @param[in] received_bytes Inbound response wire bytes.
      */
     void on_outgoing_end(uint64_t id, int status_code,
-                         double duration_milliseconds);
+                         double duration_milliseconds,
+                         size_t received_bytes = 0);
 
     /**
      * @brief Computes and returns a point-in-time statistics snapshot.
@@ -249,6 +275,8 @@ class connection_tracker
     std::atomic<uint64_t> next_id_{1};
     std::atomic<size_t> active_{0};
     std::atomic<size_t> total_{0};
+    std::atomic<size_t> total_received_bytes_{0};
+    std::atomic<size_t> total_transmitted_bytes_{0};
 
     mutable std::mutex mutex_;
     size_t history_capacity_;

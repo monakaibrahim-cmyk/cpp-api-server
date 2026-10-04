@@ -1,9 +1,9 @@
-#include "api/router.h"
-#include "api/cache.h"
-#include "api/htaccess.h"
-#include "api/logger.h"
-#include "api/lua_engine.h"
-#include "api/server.h"
+#include <server/router.h>
+#include <core/cache.h>
+#include <core/htaccess.h>
+#include <core/logger.h>
+#include <scripting/lua_engine.h>
+#include <server/server.h>
 
 #include <filesystem>
 

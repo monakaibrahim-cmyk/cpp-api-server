@@ -1,6 +1,6 @@
 #pragma once
 
-#include "api/script_mgr.h"
+#include <scripting/script_mgr.h>
 
 namespace api
 {

@@ -363,11 +363,12 @@ foreach(MODULE_DIR IN LISTS MODULE_DIRS)
 
     # Ignore:
     #   .hidden directories
-    #   mod_template
+    #   mod-template / mod_template
     #   *.disabled directories
     if(
         MOD_NAME MATCHES "^\\."
         OR MOD_NAME STREQUAL "mod_template"
+        OR MOD_NAME STREQUAL "mod-template"
         OR MOD_NAME MATCHES "\\.disabled$"
     )
         continue()

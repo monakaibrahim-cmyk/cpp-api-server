@@ -6,27 +6,30 @@ set -e
 
 if [ -z "$1" ]; then
     echo "Usage: $0 <module_name>"
-    echo "Example: $0 mod_database"
+    echo "Example: $0 mod-database"
     exit 1
 fi
 
-MOD_NAME="$1"
-PASCAL_NAME=$(echo "$MOD_NAME" | sed -r 's/(^|_)([a-z])/\U\2/g')
+RAW_NAME="$1"
+MOD_FOLDER=$(echo "$RAW_NAME" | tr '_' '-')
+CPP_NAME=$(echo "$RAW_NAME" | tr '-' '_')
+MOD_NAME="$CPP_NAME"
+PASCAL_NAME=$(echo "$CPP_NAME" | sed -r 's/(^|_)([a-z])/\U\2/g')
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TARGET_DIR="$SCRIPT_DIR/$MOD_NAME"
+TARGET_DIR="$SCRIPT_DIR/$MOD_FOLDER"
 
 if [ -d "$TARGET_DIR" ]; then
     echo "Error: Module directory '$TARGET_DIR' already exists!"
     exit 1
 fi
 
-echo "Creating module '$MOD_NAME'..."
+echo "Creating module '$MOD_FOLDER'..."
 mkdir -p "$TARGET_DIR/include" "$TARGET_DIR/src" "$TARGET_DIR/conf"
 
 cat > "$TARGET_DIR/CMakeLists.txt" << EOF
 cmake_minimum_required(VERSION 3.25)
 
-set(MOD_NAME ${MOD_NAME})
+set(MOD_NAME ${MOD_FOLDER})
 
 file(GLOB_RECURSE MOD_SOURCES CONFIGURE_DEPENDS
     src/*.cpp
@@ -48,16 +51,16 @@ target_link_libraries(\${MOD_NAME} PUBLIC
 )
 EOF
 
-cat > "$TARGET_DIR/conf/${MOD_NAME}.lua.dist" << EOF
-${MOD_NAME} = {
+cat > "$TARGET_DIR/conf/${CPP_NAME}.lua.dist" << EOF
+${CPP_NAME} = {
     enabled = true,
 }
 EOF
 
-cat > "$TARGET_DIR/include/${MOD_NAME}.h" << EOF
+cat > "$TARGET_DIR/include/${CPP_NAME}.h" << EOF
 #pragma once
 
-#include "api/module.h"
+#include <core/module.h>
 
 #include <string>
 
@@ -183,15 +186,15 @@ private:
 EOF
 
 cat > "$TARGET_DIR/src/${MOD_NAME}.cpp" << EOF
-#include "${MOD_NAME}.h"
+#include <${MOD_NAME}.h>
 
-#include "api/config.h"
-#include "api/logger.h"
-#include "api/lua_binding.h"
-#include "api/lua_engine.h"
-#include "api/module_registry.h"
-#include "api/router.h"
-#include "api/service_registry.h"
+#include <core/config.h>
+#include <core/logger.h>
+#include <scripting/lua_binding.h>
+#include <scripting/lua_engine.h>
+#include <core/module_registry.h>
+#include <server/router.h>
+#include <core/service_registry.h>
 
 #include <crow.h>
 
@@ -314,4 +317,4 @@ API_REGISTER_MODULE(api::${MOD_NAME})
 EOF
 
 chmod +x "$0"
-echo "Module '$MOD_NAME' created at modules/$MOD_NAME"
+echo "Module '$MOD_FOLDER' created at modules/$MOD_FOLDER"

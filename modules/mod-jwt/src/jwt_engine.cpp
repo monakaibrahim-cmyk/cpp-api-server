@@ -1,6 +1,6 @@
-#include "jwt_engine.h"
-#include "api/logger.h"
-#include "api/lua_engine.h"
+#include <jwt_engine.h>
+#include <core/logger.h>
+#include <scripting/lua_engine.h>
 
 #include <chrono>
 #include <fstream>

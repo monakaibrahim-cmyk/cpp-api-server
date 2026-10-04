@@ -1,11 +1,11 @@
-#include "mod_orm.h"
+#include <mod_orm.h>
 
-#include "api/config.h"
-#include "api/logger.h"
-#include "api/lua_engine.h"
-#include "api/module_registry.h"
-#include "api/orm.h"
-#include "api/service_registry.h"
+#include <core/config.h>
+#include <core/logger.h>
+#include <scripting/lua_engine.h>
+#include <core/module_registry.h>
+#include <core/orm.h>
+#include <core/service_registry.h>
 
 namespace api
 {

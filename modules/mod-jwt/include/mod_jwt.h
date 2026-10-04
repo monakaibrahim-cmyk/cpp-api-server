@@ -2,8 +2,8 @@
 
 #include <memory>
 
-#include "api/module.h"
-#include "jwt_engine.h"
+#include <core/module.h>
+#include <jwt_engine.h>
 
 namespace api
 {

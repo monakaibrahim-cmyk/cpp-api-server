@@ -15,20 +15,20 @@
 #include <thread>
 #include <unistd.h>
 
-#include "api/cache.h"
-#include "api/config.h"
-#include "api/connection_tracker.h"
-#include "api/dashboard.h"
-#include "api/logger.h"
-#include "api/lua_engine.h"
-#include "api/metrics.h"
-#include "api/middleware.h"
-#include "api/orm.h"
-#include "api/router.h"
-#include "api/script_mgr.h"
-#include "api/server.h"
-#include "api/service_registry.h"
-#include "api/thread_pool.h"
+#include <core/cache.h>
+#include <core/config.h>
+#include <server/connection_tracker.h>
+#include <dashboard/dashboard.h>
+#include <core/logger.h>
+#include <scripting/lua_engine.h>
+#include <core/metrics.h>
+#include <server/middleware.h>
+#include <core/orm.h>
+#include <server/router.h>
+#include <scripting/script_mgr.h>
+#include <server/server.h>
+#include <core/service_registry.h>
+#include <core/thread_pool.h>
 
 static std::atomic<bool> g_shutdown{false};
 
@@ -436,6 +436,10 @@ int main(int argc, char *argv[])
                 tracker_stats.active_connections;
             response_json["total_connections"] =
                 tracker_stats.total_connections;
+            response_json["total_rx_bytes"] =
+                tracker_stats.total_received_bytes;
+            response_json["total_tx_bytes"] =
+                tracker_stats.total_transmitted_bytes;
             response_json["requests_per_second"] =
                 tracker_stats.requests_per_second;
             response_json["worker_threads"] =
@@ -466,6 +470,8 @@ int main(int argc, char *argv[])
                 snapshot.net_rx_bytes_per_sec;
             response_json["net_tx_bytes_per_sec"] =
                 snapshot.net_tx_bytes_per_sec;
+            response_json["net_rx_total_bytes"] = snapshot.net_rx_total_bytes;
+            response_json["net_tx_total_bytes"] = snapshot.net_tx_total_bytes;
             response_json["cache_hits"] = cache_statistics.hits;
             response_json["cache_misses"] = cache_statistics.misses;
             response_json["cache_items"] = cache_statistics.items;

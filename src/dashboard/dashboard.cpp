@@ -1,9 +1,9 @@
-#include "api/dashboard.h"
-#include "api/cache.h"
-#include "api/connection_tracker.h"
-#include "api/logger.h"
-#include "api/metrics.h"
-#include "api/thread_pool.h"
+#include <dashboard/dashboard.h>
+#include <core/cache.h>
+#include <server/connection_tracker.h>
+#include <core/logger.h>
+#include <core/metrics.h>
+#include <core/thread_pool.h>
 
 #include <algorithm>
 #include <chrono>
@@ -563,6 +563,15 @@ void dashboard::run()
             }
 
             double peak_cpu = 100.0;
+
+            for (double value : cpu_history_)
+            {
+                if (value > peak_cpu)
+                {
+                    peak_cpu = value;
+                }
+            }
+
             double peak_ram = 64.0;
 
             for (double value : ram_history_)
@@ -716,6 +725,13 @@ void dashboard::run()
                     text(std::to_string(tracker_stats.active_connections)) |
                         color(Color::Yellow),
                 }),
+                hbox({
+                    text("Total RX: ") | dim,
+                    text(format_bytes(snapshot.net_rx_total_bytes)) | dim,
+                    filler(),
+                    text("Total TX: ") | dim,
+                    text(format_bytes(snapshot.net_tx_total_bytes)) | dim,
+                }),
             });
 
             auto cache_statistics = s_cache_engine().get_stats();
@@ -810,6 +826,10 @@ void dashboard::run()
                     std::string st = status_text(c.status_code, c.in_flight);
                     std::string dur =
                         c.in_flight ? "-" : format_duration_ms(c.duration_ms);
+                    std::string transfer_bytes =
+                        c.in_flight ? "-"
+                                    : format_bytes(c.received_bytes +
+                                                   c.transmitted_bytes);
 
                     conn_elements.push_back(hbox({
                         text("[" + c.timestamp + "] ") | dim,
@@ -825,6 +845,7 @@ void dashboard::run()
                             color(status_color(c.status_code, c.in_flight)) |
                             bold | size(WIDTH, EQUAL, 10),
                         text(dur) | dim | size(WIDTH, EQUAL, 10),
+                        text(transfer_bytes) | dim | size(WIDTH, EQUAL, 10),
                     }));
                 }
             }

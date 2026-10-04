@@ -1,6 +1,6 @@
-#include "api/script_mgr.h"
-#include "api/logger.h"
-#include "api/router.h"
+#include <scripting/script_mgr.h>
+#include <core/logger.h>
+#include <server/router.h>
 
 namespace api
 {

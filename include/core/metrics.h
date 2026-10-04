@@ -9,7 +9,7 @@ namespace api
 {
 
 /**
- * @brief Point-in-time snapshot of system hardware and host OS resource
+ * @brief Point-in-time snapshot of process-level hardware and resource
  * consumption.
  *
  * @details Captured periodically by @ref metrics_collector to fuel real-time
@@ -17,8 +17,8 @@ namespace api
  */
 struct SystemSnapshot
 {
-    /** @brief Aggregate CPU utilization across all online processor cores (0.0%
-     * to 100.0%). */
+    /** @brief Process CPU utilization percentage across online processor cores
+     * (0.0% to 100.0%). */
     double cpu_usage_percent = 0.0;
 
     /** @brief Resident Set Size (RSS) physical RAM consumption in bytes. */
@@ -33,26 +33,30 @@ struct SystemSnapshot
     /** @brief Total number of allocated and open file descriptors. */
     size_t open_fds = 0;
 
-    /** @brief Inbound network receive bandwidth throughput in bytes per second.
-     */
+    /** @brief Process inbound network receive bandwidth throughput in bytes
+     * per second. */
     size_t net_rx_bytes_per_sec = 0;
 
-    /** @brief Outbound network transmit bandwidth throughput in bytes per
-     * second. */
+    /** @brief Process outbound network transmit bandwidth throughput in bytes
+     * per second. */
     size_t net_tx_bytes_per_sec = 0;
+
+    /** @brief Cumulative inbound network bytes received by the process. */
+    size_t net_rx_total_bytes = 0;
+
+    /** @brief Cumulative outbound network bytes transmitted by the process. */
+    size_t net_tx_total_bytes = 0;
 };
 
 /// Backward compatibility alias
 using system_snapshot = SystemSnapshot;
 
 /**
- * @brief Background telemetry collector monitoring CPU, memory, descriptor, and
- * network I/O.
+ * @brief Background telemetry collector monitoring process-level CPU, memory,
+ * descriptor, and network I/O.
  *
  * @details Operates an independent asynchronous background thread that samples
- * the Linux
- * @c /proc virtual filesystem (including @c /proc/stat, @c /proc/self/status,
- * @c /proc/self/fd, and @c /proc/net/dev) at 1-second intervals.
+ * process-isolated resource consumption at 1-second intervals.
  *
  * Example C++ usage:
  * @code{.cpp}
@@ -99,6 +103,35 @@ class metrics_collector
      */
     SystemSnapshot get_snapshot() const;
 
+    /**
+     * @brief Records process-level incoming network bytes.
+     *
+     * @param[in] bytes Inbound network bytes received.
+     */
+    static void record_received_bytes(size_t bytes);
+
+    /**
+     * @brief Records process-level outgoing network bytes.
+     *
+     * @param[in] bytes Outbound network bytes transmitted.
+     */
+    static void record_transmitted_bytes(size_t bytes);
+
+    /**
+     * @brief Records process-level bidirectional network bytes.
+     *
+     * @param[in] received_bytes Inbound network bytes received.
+     * @param[in] transmitted_bytes Outbound network bytes transmitted.
+     */
+    static void record_network_bytes(size_t received_bytes,
+                                     size_t transmitted_bytes);
+
+    /** @brief Convenience alias for @ref record_received_bytes. */
+    static void record_rx_bytes(size_t bytes);
+
+    /** @brief Convenience alias for @ref record_transmitted_bytes. */
+    static void record_tx_bytes(size_t bytes);
+
   private:
     void collect_loop();
 
@@ -113,10 +146,11 @@ class metrics_collector
     mutable std::mutex mutex_;
     SystemSnapshot current_;
 
-    size_t prev_cpu_idle_ = 0;
-    size_t prev_cpu_total_ = 0;
-    size_t prev_rx_bytes_ = 0;
-    size_t prev_tx_bytes_ = 0;
+    uint64_t previous_cpu_time_nanoseconds_ = 0;
+    std::chrono::steady_clock::time_point previous_sample_time_;
+    size_t previous_received_bytes_ = 0;
+    size_t previous_transmitted_bytes_ = 0;
+    bool has_sampled_network_ = false;
 };
 
 } // namespace api

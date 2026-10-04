@@ -1,5 +1,5 @@
-#include "api/server.h"
-#include "api/logger.h"
+#include <server/server.h>
+#include <core/logger.h>
 
 namespace api
 {
