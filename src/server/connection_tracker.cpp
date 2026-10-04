@@ -1,4 +1,5 @@
 #include <server/connection_tracker.h>
+#include <globals.h>
 
 #include <chrono>
 #include <cstdio>
@@ -18,7 +19,7 @@ static std::string format_time_now()
     std::tm time_buffer{};
     char formatted_buffer[32];
 
-    localtime_r(&time_t_value, &time_buffer);
+    __localtime_(&time_t_value, &time_buffer);
     std::snprintf(formatted_buffer, sizeof(formatted_buffer),
                   "%02d:%02d:%02d.%03d", time_buffer.tm_hour,
                   time_buffer.tm_min, time_buffer.tm_sec,

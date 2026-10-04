@@ -49,6 +49,14 @@ else
 end
 
 -- Core endpoints mapped to native handlers
+route("GET", "/favicon.ico", function(req)
+    return {
+        status = 204,
+        body = req.body,
+        content_type = "application/json"
+    }
+end)
+
 route("GET", "/api/health", "core.health")
 route("GET", "/api/info", "core.info", { cache = 60 })
 route("GET", "/api/stats", "core.stats")

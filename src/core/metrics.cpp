@@ -8,7 +8,12 @@
 #include <sstream>
 #include <string>
 #include <thread>
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 namespace api
 {
@@ -128,6 +133,20 @@ void metrics_collector::read_cpu(SystemSnapshot &snapshot)
 
     if (!time_retrieved)
     {
+#if defined(_WIN32) || defined(_WIN64)
+        FILETIME creation_time, exit_time, kernel_time, user_time;
+
+        if (GetProcessTimes(GetCurrentProcess(), &creation_time, &exit_time,
+            &kernel_time, &user_time))
+        {
+            uint64_t u_time = ((uint64_t)user_time.dwHighDateTime << 32) |
+                              user_time.dwLowDateTime;
+            uint64_t k_time = ((uint64_t)kernel_time.dwHighDateTime << 32) |
+                              kernel_time.dwLowDateTime;
+            current_cpu_time_nanoseconds = (u_time + k_time) * 100ULL;
+            time_retrieved = true;
+        }
+#else
         std::ifstream proc_stat_file("/proc/self/stat");
 
         if (proc_stat_file.is_open())
@@ -171,6 +190,7 @@ void metrics_collector::read_cpu(SystemSnapshot &snapshot)
                 }
             }
         }
+#endif
     }
 
     if (!time_retrieved)

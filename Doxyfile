@@ -6,7 +6,7 @@
 #---------------------------------------------------------------------------
 DOXYFILE_ENCODING      = UTF-8
 PROJECT_NAME           = "API Framework"
-PROJECT_NUMBER         = "1.0.0"
+PROJECT_NUMBER         = "0.0.2"
 PROJECT_BRIEF          = "Modern Asynchronous C++ HTTP Framework with Lua Scripting & Eloquent ORM"
 PROJECT_LOGO           =
 PROJECT_ICON           =

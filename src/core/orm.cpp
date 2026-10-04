@@ -1,5 +1,6 @@
 #include <core/orm.h>
 #include <core/logger.h>
+#include <globals.h>
 
 #include <algorithm>
 #include <cctype>
@@ -1776,7 +1777,7 @@ bool orm_engine::scaffold_table_files(const std::string &table_name,
     std::time_t tt = std::chrono::system_clock::to_time_t(now);
     std::tm tm_buf{};
 
-    localtime_r(&tt, &tm_buf);
+    __localtime_(&tt, &tm_buf);
 
     std::ostringstream prefix;
 
@@ -2091,7 +2092,12 @@ void orm_engine::bind_lua(sol::state &lua)
 
                 if (!def_opt)
                 {
+#if defined(_WIN32) || defined(_WIN64)
+                    def_opt = def_tbl["default_value"]
+                        .get<sol::optional<std::string>>();
+#else
                     def_opt = def_tbl["default_value"];
+#endif
                 }
 
                 col.default_value = def_opt.value_or("");

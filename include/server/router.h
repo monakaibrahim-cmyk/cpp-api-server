@@ -4,10 +4,15 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <crow.h>
 #include <sol/sol.hpp>
+
+#if defined(_WIN32) || defined(_WIN64)
+#define CROW_MSVC_WORKAROUND
+#endif
 
 namespace api
 {
@@ -39,7 +44,13 @@ using rest_native_handler_type = std::function<crow::response(
 struct RestRoutePattern
 {
     std::string raw_path;
+
+    // I have no idea why this is an error??
+#if defined(_WIN32) || defined(_WIN64)
+    crow::HTTPMethod method = crow::HTTPMethod::Get;
+#else
     crow::HTTPMethod method = crow::HTTPMethod::GET;
+#endif
     std::vector<std::string> path_segments;
     std::vector<std::string> parameter_names;
     bool has_parameters = false;
@@ -167,6 +178,13 @@ class router
      */
     void load_routes(const std::string &route_script_path);
 
+    /*
+     * @brief Reloads route script when Routes.lua is modified.
+     *
+     * @param[in] route_script_path Path to target .lua script file.
+     */
+    void reload_routes(const std::string &route_script_path);
+
     /**
      * @brief Recursively loads all .lua route scripts from the specified
      * directory.
@@ -212,6 +230,10 @@ class router
         rest_native_handlers_;
     std::vector<sol::protected_function> lua_handlers_;
     std::vector<RestRoutePattern> rest_routes_;
+
+    std::filesystem::file_time_type last_routes_mtime_;
+    std::string routes_file_path_;
+    bool is_hot_reload_ = false;
 };
 
 } // namespace api

@@ -332,6 +332,59 @@ bool router::match_route(
 
 crow::HTTPMethod router::parse_method(const std::string &method_string)
 {
+#if defined(_WIN32) || defined(_WIN64)
+    static const std::unordered_map<std::string, crow::HTTPMethod> method_map =
+        {{"GET", crow::HTTPMethod::Get},
+         {"DELETE", crow::HTTPMethod::Delete},
+         {"HEAD", crow::HTTPMethod::Head},
+         {"POST", crow::HTTPMethod::Post},
+         {"PUT", crow::HTTPMethod::Put},
+
+         {"OPTIONS", crow::HTTPMethod::Options},
+         {"CONNECT", crow::HTTPMethod::Connect},
+         {"TRACE", crow::HTTPMethod::Trace},
+
+         {"PATCH", crow::HTTPMethod::Patch},
+         {"PURGE", crow::HTTPMethod::Purge},
+         {"COPY", crow::HTTPMethod::Copy},
+         {"LOCK", crow::HTTPMethod::Lock},
+         {"MKCOL", crow::HTTPMethod::MkCol},
+         {"MOVE", crow::HTTPMethod::Move},
+         {"PROPFIND", crow::HTTPMethod::Propfind},
+         {"PROPPATCH", crow::HTTPMethod::Proppatch},
+         {"SEARCH", crow::HTTPMethod::Search},
+         {"UNLOCK", crow::HTTPMethod::Unlock},
+         {"BIND", crow::HTTPMethod::Bind},
+         {"REBIND", crow::HTTPMethod::Rebind},
+         {"UNBIND", crow::HTTPMethod::Unbind},
+         {"ACL", crow::HTTPMethod::Acl},
+
+         {"REPORT", crow::HTTPMethod::Report},
+         {"MKACTIVITY", crow::HTTPMethod::MkActivity},
+         {"CHECKOUT", crow::HTTPMethod::Checkout},
+         {"MERGE", crow::HTTPMethod::Merge},
+
+         {"MSEARCH", crow::HTTPMethod::MSearch},
+         {"NOTIFY", crow::HTTPMethod::Notify},
+         {"SUBSCRIBE", crow::HTTPMethod::Subscribe},
+         {"UNSUBSCRIBE", crow::HTTPMethod::Unsubscribe},
+
+         {"MKCALENDAR", crow::HTTPMethod::MkCalendar},
+
+         {"LINK", crow::HTTPMethod::Link},
+         {"UNLINK", crow::HTTPMethod::Unlink},
+
+         {"SOURCE", crow::HTTPMethod::Source}};
+
+    auto it = method_map.find(method_string);
+
+    if (it != method_map.end())
+    {
+        return it->second;
+    }
+
+    return crow::HTTPMethod::Get;
+#else
     if (method_string == "POST")
     {
         return crow::HTTPMethod::POST;
@@ -363,6 +416,7 @@ crow::HTTPMethod router::parse_method(const std::string &method_string)
     }
 
     return crow::HTTPMethod::GET;
+#endif
 }
 
 void router::setup_lua_route_binding()
@@ -441,49 +495,157 @@ void router::setup_lua_route_binding()
                 }
 
                 rest_routes_.push_back(route_pattern);
-
-                if (route_pattern.has_parameters)
+                if (!is_hot_reload_)
                 {
-                    bind_dynamic_crow_route(path, method);
-                }
-                else if (native_handlers_.find(handler_name) !=
-                         native_handlers_.end())
-                {
-                    auto native_handler_function =
-                        native_handlers_[handler_name];
+                    if (route_pattern.has_parameters)
+                    {
+                        bind_dynamic_crow_route(path, method);
+                    }
+                    else if (native_handlers_.find(handler_name) !=
+                             native_handlers_.end())
+                    {
+                        auto native_handler_function =
+                            native_handlers_[handler_name];
 
-                    server_.app().route_dynamic(path).methods(method)(
-                        [native_handler_function, cache_time_to_live_seconds,
-                         method_string](const crow::request &request)
-                        {
-                            HtaccessDecision htaccess_decision_result;
-
-                            if (s_htaccess().is_enabled())
+                        server_.app().route_dynamic(path).methods(method)(
+                            [native_handler_function, cache_time_to_live_seconds,
+                             method_string](const crow::request &request)
                             {
-                                std::unordered_map<std::string, std::string>
-                                    headers_map;
+                                HtaccessDecision htaccess_decision_result;
 
-                                for (const auto &pair : request.headers)
+                                if (s_htaccess().is_enabled())
                                 {
-                                    headers_map[pair.first] = pair.second;
+                                    std::unordered_map<std::string, std::string>
+                                        headers_map;
+
+                                    for (const auto &pair : request.headers)
+                                    {
+                                        headers_map[pair.first] = pair.second;
+                                    }
+
+                                    htaccess_decision_result =
+                                        s_htaccess().evaluate(
+                                            method_string, request.url,
+                                            request.remote_ip_address, headers_map);
+
+                                    if (htaccess_decision_result.action ==
+                                        htaccess_action::forbidden)
+                                    {
+                                        crow::response response(
+                                            403,
+                                            htaccess_decision_result.body.empty()
+                                                ? "{\"error\":\"Access Forbidden\"}"
+                                                : htaccess_decision_result.body);
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
+
+                                    if (htaccess_decision_result.action ==
+                                        htaccess_action::redirect)
+                                    {
+                                        crow::response response(
+                                            htaccess_decision_result.status_code,
+                                            htaccess_decision_result.body);
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
+
+                                    if (htaccess_decision_result.action ==
+                                        htaccess_action::gone)
+                                    {
+                                        crow::response response(
+                                            410,
+                                            htaccess_decision_result.body.empty()
+                                                ? "{\"error\":\"Resource Gone\"}"
+                                                : htaccess_decision_result.body);
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
                                 }
 
-                                htaccess_decision_result =
-                                    s_htaccess().evaluate(
-                                        method_string, request.url,
-                                        request.remote_ip_address, headers_map);
-
-                                if (htaccess_decision_result.action ==
-                                    htaccess_action::forbidden)
+                                if (cache_time_to_live_seconds > 0 &&
+                                    request.method == "GET"_method)
                                 {
-                                    crow::response response(
-                                        403,
-                                        htaccess_decision_result.body.empty()
-                                            ? "{\"error\":\"Access Forbidden\"}"
-                                            : htaccess_decision_result.body);
+                                    std::string cache_key =
+                                        "GET:" + (request.raw_url.empty()
+                                                      ? request.url
+                                                      : request.raw_url);
+                                    CachedResponse cached_response_data;
 
-                                    for (const auto &[header_key,
-                                                      header_value] :
+                                    if (s_cache_engine().get(cache_key,
+                                                             cached_response_data))
+                                    {
+                                        crow::response response(
+                                            cached_response_data.status_code,
+                                            cached_response_data.body);
+
+                                        response.add_header(
+                                            "Content-Type",
+                                            cached_response_data.content_type);
+                                        response.add_header("X-Cache", "HIT");
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
+
+                                    auto response =
+                                        native_handler_function(request);
+
+                                    if (response.code >= 200 && response.code < 300)
+                                    {
+                                        CachedResponse to_cache;
+
+                                        to_cache.status_code = response.code;
+                                        to_cache.body = response.body;
+
+                                        auto content_type_header =
+                                            response.get_header_value(
+                                                "Content-Type");
+
+                                        to_cache.content_type =
+                                            content_type_header.empty()
+                                                ? "application/json"
+                                                : content_type_header;
+                                        s_cache_engine().set(
+                                            cache_key, to_cache,
+                                            std::chrono::seconds(
+                                                cache_time_to_live_seconds));
+                                    }
+
+                                    response.add_header("X-Cache", "MISS");
+
+                                    for (const auto &[header_key, header_value] :
                                          htaccess_decision_result.headers)
                                     {
                                         response.add_header(header_key,
@@ -493,123 +655,17 @@ void router::setup_lua_route_binding()
                                     return response;
                                 }
 
-                                if (htaccess_decision_result.action ==
-                                    htaccess_action::redirect)
-                                {
-                                    crow::response response(
-                                        htaccess_decision_result.status_code,
-                                        htaccess_decision_result.body);
-
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
-                                    {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
-
-                                    return response;
-                                }
-
-                                if (htaccess_decision_result.action ==
-                                    htaccess_action::gone)
-                                {
-                                    crow::response response(
-                                        410,
-                                        htaccess_decision_result.body.empty()
-                                            ? "{\"error\":\"Resource Gone\"}"
-                                            : htaccess_decision_result.body);
-
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
-                                    {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
-
-                                    return response;
-                                }
-                            }
-
-                            if (cache_time_to_live_seconds > 0 &&
-                                request.method == crow::HTTPMethod::GET)
-                            {
-                                std::string cache_key =
-                                    "GET:" + (request.raw_url.empty()
-                                                  ? request.url
-                                                  : request.raw_url);
-                                CachedResponse cached_response_data;
-
-                                if (s_cache_engine().get(cache_key,
-                                                         cached_response_data))
-                                {
-                                    crow::response response(
-                                        cached_response_data.status_code,
-                                        cached_response_data.body);
-
-                                    response.add_header(
-                                        "Content-Type",
-                                        cached_response_data.content_type);
-                                    response.add_header("X-Cache", "HIT");
-
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
-                                    {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
-
-                                    return response;
-                                }
-
-                                auto response =
-                                    native_handler_function(request);
-
-                                if (response.code >= 200 && response.code < 300)
-                                {
-                                    CachedResponse to_cache;
-
-                                    to_cache.status_code = response.code;
-                                    to_cache.body = response.body;
-
-                                    auto content_type_header =
-                                        response.get_header_value(
-                                            "Content-Type");
-
-                                    to_cache.content_type =
-                                        content_type_header.empty()
-                                            ? "application/json"
-                                            : content_type_header;
-                                    s_cache_engine().set(
-                                        cache_key, to_cache,
-                                        std::chrono::seconds(
-                                            cache_time_to_live_seconds));
-                                }
-
-                                response.add_header("X-Cache", "MISS");
+                                auto response = native_handler_function(request);
 
                                 for (const auto &[header_key, header_value] :
                                      htaccess_decision_result.headers)
                                 {
-                                    response.add_header(header_key,
-                                                        header_value);
+                                    response.add_header(header_key, header_value);
                                 }
 
                                 return response;
-                            }
-
-                            auto response = native_handler_function(request);
-
-                            for (const auto &[header_key, header_value] :
-                                 htaccess_decision_result.headers)
-                            {
-                                response.add_header(header_key, header_value);
-                            }
-
-                            return response;
-                        });
+                            });
+                    }
                 }
 
                 if (cache_time_to_live_seconds > 0)
@@ -640,215 +696,229 @@ void router::setup_lua_route_binding()
                 route_pattern.lua_handler_index = handler_index;
                 rest_routes_.push_back(route_pattern);
 
-                if (route_pattern.has_parameters)
+                if (!is_hot_reload_)
                 {
-                    bind_dynamic_crow_route(path, method);
-                }
-                else
-                {
-                    server_.app().route_dynamic(path).methods(method)(
-                        [this, handler_index, cache_time_to_live_seconds,
-                         method_string](const crow::request &request)
-                        {
-                            HtaccessDecision htaccess_decision_result;
-                            std::unordered_map<std::string, std::string>
-                                headers_map;
-
-                            for (const auto &pair : request.headers)
+                    if (route_pattern.has_parameters)
+                    {
+                        bind_dynamic_crow_route(path, method);
+                    }
+                    else
+                    {
+                        server_.app().route_dynamic(path).methods(method)(
+                            [this, handler_index, cache_time_to_live_seconds,
+                             method_string](const crow::request &request)
                             {
-                                headers_map[pair.first] = pair.second;
-                            }
+                                HtaccessDecision htaccess_decision_result;
+                                std::unordered_map<std::string, std::string>
+                                    headers_map;
 
-                            if (s_htaccess().is_enabled())
-                            {
-                                htaccess_decision_result =
-                                    s_htaccess().evaluate(
-                                        method_string, request.url,
-                                        request.remote_ip_address, headers_map);
-
-                                if (htaccess_decision_result.action ==
-                                    htaccess_action::forbidden)
+                                for (const auto &pair : request.headers)
                                 {
-                                    crow::response response(
-                                        403,
-                                        htaccess_decision_result.body.empty()
-                                            ? "{\"error\":\"Access Forbidden\"}"
-                                            : htaccess_decision_result.body);
-
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
-                                    {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
-
-                                    return response;
+                                    headers_map[pair.first] = pair.second;
                                 }
 
-                                if (htaccess_decision_result.action ==
-                                    htaccess_action::redirect)
+                                if (s_htaccess().is_enabled())
                                 {
-                                    crow::response response(
-                                        htaccess_decision_result.status_code,
-                                        htaccess_decision_result.body);
+                                    htaccess_decision_result =
+                                        s_htaccess().evaluate(
+                                            method_string, request.url,
+                                            request.remote_ip_address,
+                                            headers_map);
 
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
+                                    if (htaccess_decision_result.action ==
+                                        htaccess_action::forbidden)
                                     {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
+                                        crow::response response(
+                                            403, htaccess_decision_result.body
+                                                         .empty()
+                                                     ? "{\"error\":\"Access "
+                                                       "Forbidden\"}"
+                                                     : htaccess_decision_result
+                                                           .body);
 
-                                    return response;
-                                }
-
-                                if (htaccess_decision_result.action ==
-                                    htaccess_action::gone)
-                                {
-                                    crow::response response(
-                                        410,
-                                        htaccess_decision_result.body.empty()
-                                            ? "{\"error\":\"Resource Gone\"}"
-                                            : htaccess_decision_result.body);
-
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
-                                    {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
-
-                                    return response;
-                                }
-                            }
-
-                            if (cache_time_to_live_seconds > 0 &&
-                                request.method == crow::HTTPMethod::GET)
-                            {
-                                std::string cache_key =
-                                    "GET:" + (request.raw_url.empty()
-                                                  ? request.url
-                                                  : request.raw_url);
-                                CachedResponse cached_response_data;
-
-                                if (s_cache_engine().get(cache_key,
-                                                         cached_response_data))
-                                {
-                                    crow::response response(
-                                        cached_response_data.status_code,
-                                        cached_response_data.body);
-
-                                    response.add_header(
-                                        "Content-Type",
-                                        cached_response_data.content_type);
-                                    response.add_header("X-Cache", "HIT");
-
-                                    for (const auto &[header_key,
-                                                      header_value] :
-                                         htaccess_decision_result.headers)
-                                    {
-                                        response.add_header(header_key,
-                                                            header_value);
-                                    }
-
-                                    return response;
-                                }
-                            }
-
-                            std::lock_guard<std::mutex> route_lock(
-                                lua_.mutex());
-
-                            sol::table request_table =
-                                lua_.state().create_table();
-                            std::unordered_map<std::string, std::string>
-                                empty_parameters;
-
-                            populate_lua_request(
-                                lua_, request, empty_parameters,
-                                htaccess_decision_result, request_table);
-
-                            auto result =
-                                lua_handlers_[handler_index](request_table);
-
-                            if (!result.valid())
-                            {
-                                sol::error lua_error = result;
-
-                                LOG_ERROR("routes", "Lua route error: "
-                                                        << lua_error.what());
-
-                                return crow::response(500,
-                                                      "{\"error\":\"Internal "
-                                                      "Lua handler error\"}");
-                            }
-
-                            sol::table response_table =
-                                result.get<sol::table>();
-                            int status = response_table.get_or("status", 200);
-                            std::string body =
-                                response_table.get_or<std::string>("body", "");
-                            std::string content_type =
-                                response_table.get_or<std::string>(
-                                    "content_type", "application/json");
-
-                            if (cache_time_to_live_seconds > 0 &&
-                                status >= 200 && status < 300)
-                            {
-                                std::string cache_key =
-                                    "GET:" + (request.raw_url.empty()
-                                                  ? request.url
-                                                  : request.raw_url);
-                                CachedResponse to_cache;
-
-                                to_cache.status_code = status;
-                                to_cache.body = body;
-                                to_cache.content_type = content_type;
-
-                                s_cache_engine().set(
-                                    cache_key, to_cache,
-                                    std::chrono::seconds(
-                                        cache_time_to_live_seconds));
-                            }
-
-                            crow::response response(status, body);
-
-                            response.add_header("Content-Type", content_type);
-
-                            if (cache_time_to_live_seconds > 0)
-                            {
-                                response.add_header("X-Cache", "MISS");
-                            }
-
-                            for (const auto &[header_key, header_value] :
-                                 htaccess_decision_result.headers)
-                            {
-                                response.add_header(header_key, header_value);
-                            }
-
-                            sol::optional<sol::table> user_headers =
-                                response_table["headers"];
-
-                            if (user_headers)
-                            {
-                                user_headers.value().for_each(
-                                    [&response](sol::object key,
-                                                sol::object value)
-                                    {
-                                        if (key.is<std::string>() &&
-                                            value.is<std::string>())
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
                                         {
-                                            response.add_header(
-                                                key.as<std::string>(),
-                                                value.as<std::string>());
+                                            response.add_header(header_key,
+                                                                header_value);
                                         }
-                                    });
-                            }
 
-                            return response;
-                        });
+                                        return response;
+                                    }
+
+                                    if (htaccess_decision_result.action ==
+                                        htaccess_action::redirect)
+                                    {
+                                        crow::response response(
+                                            htaccess_decision_result
+                                                .status_code,
+                                            htaccess_decision_result.body);
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
+
+                                    if (htaccess_decision_result.action ==
+                                        htaccess_action::gone)
+                                    {
+                                        crow::response response(
+                                            410, htaccess_decision_result.body
+                                                         .empty()
+                                                     ? "{\"error\":\"Resource "
+                                                       "Gone\"}"
+                                                     : htaccess_decision_result
+                                                           .body);
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
+                                }
+
+                                if (cache_time_to_live_seconds > 0 &&
+                                    request.method == "GET"_method)
+                                {
+                                    std::string cache_key =
+                                        "GET:" + (request.raw_url.empty()
+                                                      ? request.url
+                                                      : request.raw_url);
+                                    CachedResponse cached_response_data;
+
+                                    if (s_cache_engine().get(
+                                            cache_key, cached_response_data))
+                                    {
+                                        crow::response response(
+                                            cached_response_data.status_code,
+                                            cached_response_data.body);
+
+                                        response.add_header(
+                                            "Content-Type",
+                                            cached_response_data.content_type);
+                                        response.add_header("X-Cache", "HIT");
+
+                                        for (const auto &[header_key,
+                                                          header_value] :
+                                             htaccess_decision_result.headers)
+                                        {
+                                            response.add_header(header_key,
+                                                                header_value);
+                                        }
+
+                                        return response;
+                                    }
+                                }
+
+                                std::lock_guard<std::mutex> route_lock(
+                                    lua_.mutex());
+
+                                sol::table request_table =
+                                    lua_.state().create_table();
+                                std::unordered_map<std::string, std::string>
+                                    empty_parameters;
+
+                                populate_lua_request(
+                                    lua_, request, empty_parameters,
+                                    htaccess_decision_result, request_table);
+
+                                auto result =
+                                    lua_handlers_[handler_index](request_table);
+
+                                if (!result.valid())
+                                {
+                                    sol::error lua_error = result;
+
+                                    LOG_ERROR("routes",
+                                              "Lua route error: "
+                                                  << lua_error.what());
+
+                                    return crow::response(
+                                        500, "{\"error\":\"Internal "
+                                             "Lua handler error\"}");
+                                }
+
+                                sol::table response_table =
+                                    result.get<sol::table>();
+                                int status =
+                                    response_table.get_or("status", 200);
+                                std::string body =
+                                    response_table.get_or<std::string>("body",
+                                                                       "");
+                                std::string content_type =
+                                    response_table.get_or<std::string>(
+                                        "content_type", "application/json");
+
+                                if (cache_time_to_live_seconds > 0 &&
+                                    status >= 200 && status < 300)
+                                {
+                                    std::string cache_key =
+                                        "GET:" + (request.raw_url.empty()
+                                                      ? request.url
+                                                      : request.raw_url);
+                                    CachedResponse to_cache;
+
+                                    to_cache.status_code = status;
+                                    to_cache.body = body;
+                                    to_cache.content_type = content_type;
+
+                                    s_cache_engine().set(
+                                        cache_key, to_cache,
+                                        std::chrono::seconds(
+                                            cache_time_to_live_seconds));
+                                }
+
+                                crow::response response(status, body);
+
+                                response.add_header("Content-Type",
+                                                    content_type);
+
+                                if (cache_time_to_live_seconds > 0)
+                                {
+                                    response.add_header("X-Cache", "MISS");
+                                }
+
+                                for (const auto &[header_key, header_value] :
+                                     htaccess_decision_result.headers)
+                                {
+                                    response.add_header(header_key,
+                                                        header_value);
+                                }
+
+                                sol::optional<sol::table> user_headers =
+                                    response_table["headers"];
+
+                                if (user_headers)
+                                {
+                                    user_headers.value().for_each(
+                                        [&response](sol::object key,
+                                                    sol::object value)
+                                        {
+                                            if (key.is<std::string>() &&
+                                                value.is<std::string>())
+                                            {
+                                                response.add_header(
+                                                    key.as<std::string>(),
+                                                    value.as<std::string>());
+                                            }
+                                        });
+                                }
+
+                                return response;
+                            });
+                    }
                 }
 
                 if (cache_time_to_live_seconds > 0)
@@ -877,6 +947,18 @@ void router::setup_lua_route_binding()
 
 crow::response router::dispatch_request(const crow::request &request)
 {
+    if (!routes_file_path_.empty())
+    {
+        std::error_code ec;
+        auto current_mtime =
+            std::filesystem::last_write_time(routes_file_path_, ec);
+        if (!ec && current_mtime > last_routes_mtime_)
+        {
+            last_routes_mtime_ = current_mtime;
+            reload_routes(routes_file_path_);
+        }
+    }
+
     std::string clean_path = request.url;
     auto query_position = clean_path.find('?');
 
@@ -1010,8 +1092,7 @@ crow::response router::dispatch_request(const crow::request &request)
         return response;
     }
 
-    if (matched_route->cache_time_to_live_seconds > 0 &&
-        request.method == crow::HTTPMethod::GET)
+    if (matched_route->cache_time_to_live_seconds > 0 && request.method == "GET"_method)
     {
         std::string cache_key =
             "GET:" + (request.raw_url.empty() ? request.url : request.raw_url);
@@ -1113,8 +1194,8 @@ crow::response router::dispatch_request(const crow::request &request)
         }
     }
 
-    if (matched_route->cache_time_to_live_seconds > 0 &&
-        request.method == crow::HTTPMethod::GET && response.code >= 200 &&
+    if (matched_route->cache_time_to_live_seconds > 0 && request.method == "GET"_method &&
+        response.code >= 200 &&
         response.code < 300)
     {
         std::string cache_key =
@@ -1148,8 +1229,45 @@ crow::response router::dispatch_request(const crow::request &request)
 
 void router::load_routes(const std::string &route_script_path)
 {
+    routes_file_path_ = route_script_path;
+    std::error_code ec;
+    last_routes_mtime_ =
+        std::filesystem::last_write_time(routes_file_path_, ec);
+
     setup_lua_route_binding();
+
     lua_.load_file(route_script_path);
+}
+
+void router::reload_routes(const std::string &route_script_path)
+{
+    std::lock_guard<std::mutex> lua_lock(lua_.mutex());
+
+    LOG_INFO("routes", "Hot-reloading routes from: " << route_script_path);
+
+     {
+        std::lock_guard<std::mutex> lock(mutex_);
+        rest_routes_.clear();
+        lua_handlers_.clear();
+        route_count_ = 0;
+        is_hot_reload_ = true;
+    }
+
+    try
+    {
+        lua_.state().script_file(route_script_path);
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        LOG_INFO("routes",
+                 "Hot-reloaded " << rest_routes_.size() << " route(s)");
+    }
+    catch (const sol::error& e)
+    {
+        LOG_ERROR("routes", "Failed to hot-reload routes: " << e.what());
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    is_hot_reload_ = false;
 }
 
 void router::load_routes_from_dir(const std::string &directory_path)

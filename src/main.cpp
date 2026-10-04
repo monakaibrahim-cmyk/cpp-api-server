@@ -13,7 +13,12 @@
 #include <sstream>
 #include <string>
 #include <thread>
+
+#if defined(_WIN32) || defined(_WIN64)
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 #include <core/cache.h>
 #include <core/config.h>
@@ -30,23 +35,28 @@
 #include <core/service_registry.h>
 #include <core/thread_pool.h>
 
+#include <globals.h>
+
 static std::atomic<bool> g_shutdown{false};
 
 static void signal_handler(int /*signal_number*/) { g_shutdown.store(true); }
 
 int main(int argc, char *argv[])
 {
-    std::string config_path = "config/server.lua";
+    std::string config_path = CONFIG_PATH;
     int port_override = -1;
     bool no_dashboard = false;
+#if defined(_WIN32) || defined(_WIN64)
+    bool background_child = false;
+#endif
     bool run_background = false;
 
     std::string make_model_name;
     std::string make_migration_name;
     std::string table_override;
     std::string db_scaffold_target;
-    std::string models_dir = "scripts/models";
-    std::string migrations_dir = "scripts/migrations";
+    std::string models_dir = MODEL_DIRECTORY;
+    std::string migrations_dir = MIGRATION_DIRECTORY;
     bool list_db_tables = false;
 
     for (int index = 1; index < argc; ++index)
@@ -66,6 +76,14 @@ int main(int argc, char *argv[])
             run_background = true;
             no_dashboard = true;
         }
+#if defined(_WIN32) || defined(_WIN64)
+        else if (argument == "--background-child")
+        {
+            background_child = true;
+            run_background = true;
+            no_dashboard = true;
+        }
+#endif
         else if (argument == "--no-dashboard")
         {
             no_dashboard = true;
@@ -278,7 +296,7 @@ int main(int argc, char *argv[])
                 std::chrono::system_clock::to_time_t(current_time);
             std::tm time_structure{};
 
-            localtime_r(&time_t_value, &time_structure);
+            __localtime_(&time_t_value, &time_structure);
 
             std::ostringstream prefix_stream;
 
@@ -339,6 +357,56 @@ int main(int argc, char *argv[])
         configuration.dashboard_enabled = false;
     }
 
+#if defined(_WIN32) || defined(_WIN64)
+    if (run_background && !background_child)
+    {
+        char executable[MAX_PATH];
+
+        if (GetModuleFileNameA(nullptr, executable, MAX_PATH) == 0)
+        {
+            std::println(stderr, "Failed to determine executable path: {}",
+                GetLastError());
+
+            return EXIT_FAILURE;
+        }
+        std::string parameter = "\"" + std::string(executable) + "\"";
+
+        for (int index = 1; index < argc; ++index)
+        {
+            std::string argument = argv[index];
+
+            if (argument == "--headless")
+            {
+                parameter += " --background-child";
+            }
+            else
+            {
+                parameter += " \"";
+                parameter += argument;
+                parameter += "\"";
+            }
+        }
+
+        STARTUPINFO startup_info{};
+        startup_info.cb = sizeof(startup_info);
+
+        PROCESS_INFORMATION process_info{};
+
+        if (!CreateProcessA(nullptr, parameter.data(), nullptr, nullptr, FALSE,
+            CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, nullptr, &startup_info, &process_info))
+        {
+            std::println(stderr, "Failed to start background process: {}", GetLastError());
+
+            return EXIT_FAILURE;
+        }
+
+        std::println("API-cli running in background (PID: {}, Port: {})", process_info.dwProcessId, configuration.port);
+
+        CloseHandle(process_info.hThread);
+        CloseHandle(process_info.hProcess);
+
+        return EXIT_SUCCESS;
+#else
     if (run_background)
     {
         pid_t process_id = fork();
@@ -374,6 +442,7 @@ int main(int argc, char *argv[])
                 close(dev_null_file_descriptor);
             }
         }
+#endif
     }
 
     api::init_logging(configuration);
@@ -422,7 +491,7 @@ int main(int argc, char *argv[])
         [](const crow::request & /*request*/)
         {
             return crow::response(
-                200, "{\"name\":\"API-cli\",\"version\":\"1.0.0\"}");
+                200, "{\"name\":\"" APP_NAME "\",\"version\":\"" VERSION_STRING "\"}");
         });
 
     server_router.register_native_handler(

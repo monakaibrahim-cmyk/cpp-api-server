@@ -1,5 +1,6 @@
 #include <core/logger.h>
 #include <core/config.h>
+#include <globals.h>
 
 #include <chrono>
 #include <cstdio>
@@ -152,7 +153,7 @@ void log_message(const std::string &channel, severity_level level,
     std::tm time_structure{};
     char time_buffer[32];
 
-    localtime_r(&time_t_value, &time_structure);
+    __localtime_(&time_t_value, &time_structure);
     std::snprintf(time_buffer, sizeof(time_buffer), "%02d:%02d:%02d.%03d",
                   time_structure.tm_hour, time_structure.tm_min,
                   time_structure.tm_sec,
