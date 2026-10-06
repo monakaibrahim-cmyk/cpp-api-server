@@ -108,6 +108,8 @@ void lua_engine::setup_package_path(const std::string &base_directory)
     {
         extra_paths += ";modules/?/lua/?.lua;modules/?/lua/?/init.lua";
         extra_paths +=
+            ";modules/mod-orm/lua/?.lua;modules/mod-orm/lua/?/init.lua";
+        extra_paths +=
             ";modules/mod_orm/lua/?.lua;modules/mod_orm/lua/?/init.lua";
     }
 

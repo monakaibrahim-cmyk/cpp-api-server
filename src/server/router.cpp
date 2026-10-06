@@ -332,49 +332,48 @@ bool router::match_route(
 
 crow::HTTPMethod router::parse_method(const std::string &method_string)
 {
-#if defined(_WIN32) || defined(_WIN64)
     static const std::unordered_map<std::string, crow::HTTPMethod> method_map =
-        {{"GET", crow::HTTPMethod::Get},
-         {"DELETE", crow::HTTPMethod::Delete},
-         {"HEAD", crow::HTTPMethod::Head},
-         {"POST", crow::HTTPMethod::Post},
-         {"PUT", crow::HTTPMethod::Put},
+        {{"GET", "GET"_method},
+         {"DELETE", "DELETE"_method},
+         {"HEAD", "HEAD"_method},
+         {"POST", "POST"_method},
+         {"PUT", "PUT"_method},
 
-         {"OPTIONS", crow::HTTPMethod::Options},
-         {"CONNECT", crow::HTTPMethod::Connect},
-         {"TRACE", crow::HTTPMethod::Trace},
+         {"OPTIONS", "OPTIONS"_method},
+         {"CONNECT", "CONNECT"_method},
+         {"TRACE", "TRACE"_method},
 
-         {"PATCH", crow::HTTPMethod::Patch},
-         {"PURGE", crow::HTTPMethod::Purge},
-         {"COPY", crow::HTTPMethod::Copy},
-         {"LOCK", crow::HTTPMethod::Lock},
-         {"MKCOL", crow::HTTPMethod::MkCol},
-         {"MOVE", crow::HTTPMethod::Move},
-         {"PROPFIND", crow::HTTPMethod::Propfind},
-         {"PROPPATCH", crow::HTTPMethod::Proppatch},
-         {"SEARCH", crow::HTTPMethod::Search},
-         {"UNLOCK", crow::HTTPMethod::Unlock},
-         {"BIND", crow::HTTPMethod::Bind},
-         {"REBIND", crow::HTTPMethod::Rebind},
-         {"UNBIND", crow::HTTPMethod::Unbind},
-         {"ACL", crow::HTTPMethod::Acl},
+         {"PATCH", "PATCH"_method},
+         {"PURGE", "PURGE"_method},
+         {"COPY", "COPY"_method},
+         {"LOCK", "LOCK"_method},
+         {"MKCOL", "MKCOL"_method},
+         {"MOVE", "MOVE"_method},
+         {"PROPFIND", "PROPFIND"_method},
+         {"PROPPATCH", "PROPPATCH"_method},
+         {"SEARCH", "SEARCH"_method},
+         {"UNLOCK", "UNLOCK"_method},
+         {"BIND", "BIND"_method},
+         {"REBIND", "REBIND"_method},
+         {"UNBIND", "UNBIND"_method},
+         {"ACL", "ACL"_method},
 
-         {"REPORT", crow::HTTPMethod::Report},
-         {"MKACTIVITY", crow::HTTPMethod::MkActivity},
-         {"CHECKOUT", crow::HTTPMethod::Checkout},
-         {"MERGE", crow::HTTPMethod::Merge},
+         {"REPORT", "REPORT"_method},
+         {"MKACTIVITY", "MKACTIVITY"_method},
+         {"CHECKOUT", "CHECKOUT"_method},
+         {"MERGE", "MERGE"_method},
 
-         {"MSEARCH", crow::HTTPMethod::MSearch},
-         {"NOTIFY", crow::HTTPMethod::Notify},
-         {"SUBSCRIBE", crow::HTTPMethod::Subscribe},
-         {"UNSUBSCRIBE", crow::HTTPMethod::Unsubscribe},
+         {"MSEARCH", "MSEARCH"_method},
+         {"NOTIFY", "NOTIFY"_method},
+         {"SUBSCRIBE", "SUBSCRIBE"_method},
+         {"UNSUBSCRIBE", "UNSUBSCRIBE"_method},
 
-         {"MKCALENDAR", crow::HTTPMethod::MkCalendar},
+         {"MKCALENDAR", "MKCALENDAR"_method},
 
-         {"LINK", crow::HTTPMethod::Link},
-         {"UNLINK", crow::HTTPMethod::Unlink},
+         {"LINK", "LINK"_method},
+         {"UNLINK", "UNLINK"_method},
 
-         {"SOURCE", crow::HTTPMethod::Source}};
+         {"SOURCE", "SOURCE"_method}};
 
     auto it = method_map.find(method_string);
 
@@ -383,40 +382,7 @@ crow::HTTPMethod router::parse_method(const std::string &method_string)
         return it->second;
     }
 
-    return crow::HTTPMethod::Get;
-#else
-    if (method_string == "POST")
-    {
-        return crow::HTTPMethod::POST;
-    }
-
-    if (method_string == "PUT")
-    {
-        return crow::HTTPMethod::PUT;
-    }
-
-    if (method_string == "DELETE")
-    {
-        return crow::HTTPMethod::DELETE;
-    }
-
-    if (method_string == "PATCH")
-    {
-        return crow::HTTPMethod::PATCH;
-    }
-
-    if (method_string == "HEAD")
-    {
-        return crow::HTTPMethod::HEAD;
-    }
-
-    if (method_string == "OPTIONS")
-    {
-        return crow::HTTPMethod::OPTIONS;
-    }
-
-    return crow::HTTPMethod::GET;
-#endif
+    return "GET"_method;
 }
 
 void router::setup_lua_route_binding()
@@ -949,12 +915,14 @@ crow::response router::dispatch_request(const crow::request &request)
 {
     if (!routes_file_path_.empty())
     {
-        std::error_code ec;
-        auto current_mtime =
-            std::filesystem::last_write_time(routes_file_path_, ec);
-        if (!ec && current_mtime > last_routes_mtime_)
+        std::error_code error_code;
+        auto current_modification_time =
+            std::filesystem::last_write_time(routes_file_path_, error_code);
+
+        if (!error_code &&
+            current_modification_time > last_routes_modification_time_)
         {
-            last_routes_mtime_ = current_mtime;
+            last_routes_modification_time_ = current_modification_time;
             reload_routes(routes_file_path_);
         }
     }
@@ -1230,9 +1198,9 @@ crow::response router::dispatch_request(const crow::request &request)
 void router::load_routes(const std::string &route_script_path)
 {
     routes_file_path_ = route_script_path;
-    std::error_code ec;
-    last_routes_mtime_ =
-        std::filesystem::last_write_time(routes_file_path_, ec);
+    std::error_code error_code;
+    last_routes_modification_time_ =
+        std::filesystem::last_write_time(routes_file_path_, error_code);
 
     setup_lua_route_binding();
 
@@ -1245,7 +1213,7 @@ void router::reload_routes(const std::string &route_script_path)
 
     LOG_INFO("routes", "Hot-reloading routes from: " << route_script_path);
 
-     {
+    {
         std::lock_guard<std::mutex> lock(mutex_);
         rest_routes_.clear();
         lua_handlers_.clear();
@@ -1261,9 +1229,9 @@ void router::reload_routes(const std::string &route_script_path)
         LOG_INFO("routes",
                  "Hot-reloaded " << rest_routes_.size() << " route(s)");
     }
-    catch (const sol::error& e)
+    catch (const sol::error &error)
     {
-        LOG_ERROR("routes", "Failed to hot-reload routes: " << e.what());
+        LOG_ERROR("routes", "Failed to hot-reload routes: " << error.what());
     }
 
     std::lock_guard<std::mutex> lock(mutex_);

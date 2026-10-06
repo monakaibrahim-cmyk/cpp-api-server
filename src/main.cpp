@@ -406,6 +406,7 @@ int main(int argc, char *argv[])
         CloseHandle(process_info.hProcess);
 
         return EXIT_SUCCESS;
+    }
 #else
     if (run_background)
     {
@@ -442,8 +443,8 @@ int main(int argc, char *argv[])
                 close(dev_null_file_descriptor);
             }
         }
-#endif
     }
+#endif
 
     api::init_logging(configuration);
 

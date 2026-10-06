@@ -348,6 +348,15 @@ option(API_CLI_ENABLE_LUA_POSIX
     ON
 )
 
+# Embedded Lua runtime series. Usage: cmake -B build -DLUA_VERSION=5.4
+set(API_CLI_SUPPORTED_LUA_VERSIONS 5.5 5.4 5.3 5.2)
+
+set(LUA_VERSION "5.4" CACHE STRING
+    "Embedded Lua version series (5.5, 5.4, 5.3 or 5.2)"
+)
+
+set_property(CACHE LUA_VERSION PROPERTY STRINGS ${API_CLI_SUPPORTED_LUA_VERSIONS})
+
 # Platform detection
 
 if(WIN32)
@@ -445,23 +454,53 @@ FetchContent_Declare(
 
 FetchContent_MakeAvailable(Crow)
 
-# Lua 5.5.1
+# Lua (selected through -DLUA_VERSION)
 
-message(STATUS "[Dependency] Fetching Lua 5.5.1")
+if(NOT LUA_VERSION IN_LIST API_CLI_SUPPORTED_LUA_VERSIONS)
+    message(FATAL_ERROR
+        "Unsupported LUA_VERSION '${LUA_VERSION}'. "
+        "Choose one of: ${API_CLI_SUPPORTED_LUA_VERSIONS}"
+    )
+endif()
+
+# Latest official release of each series, pinned with its SHA-256 hash.
+if(LUA_VERSION STREQUAL "5.5")
+    set(API_CLI_LUA_RELEASE "5.5.1")
+    set(API_CLI_LUA_HASH "1c4b4068d67061f2a2231ad2b5422e77acea1487ea9890f6320af614f4373dce")
+elseif(LUA_VERSION STREQUAL "5.4")
+    set(API_CLI_LUA_RELEASE "5.4.8")
+    set(API_CLI_LUA_HASH "4f18ddae154e793e46eeab727c59ef1c0c0c2b744e7b94219710d76f530629ae")
+elseif(LUA_VERSION STREQUAL "5.3")
+    set(API_CLI_LUA_RELEASE "5.3.6")
+    set(API_CLI_LUA_HASH "fc5fd69bb8736323f026672b1b7235da613d7177e72558893a0bdcd320466d60")
+elseif(LUA_VERSION STREQUAL "5.2")
+    set(API_CLI_LUA_RELEASE "5.2.4")
+    set(API_CLI_LUA_HASH "b9e2e4aad6789b3b63a056d442f7b39f0ecfca3ae0f1fc0ae4e9614401b69f4b")
+endif()
+
+message(STATUS "[Dependency] Fetching Lua ${API_CLI_LUA_RELEASE} (LUA_VERSION=${LUA_VERSION})")
 
 cmake_policy(SET CMP0169 OLD)
 
+# A version-specific content name gives every release its own source
+# directory, so switching LUA_VERSION recompiles Lua and every sol2
+# consumer instead of linking a stale archive built from other headers.
+string(REPLACE "." "_" API_CLI_LUA_CONTENT_NAME "lua_${API_CLI_LUA_RELEASE}")
+
 FetchContent_Declare(
-    lua
-    URL https://codeload.github.com/lua/lua/tar.gz/refs/tags/v5.5.1
+    ${API_CLI_LUA_CONTENT_NAME}
+    URL https://www.lua.org/ftp/lua-${API_CLI_LUA_RELEASE}.tar.gz
+    URL_HASH SHA256=${API_CLI_LUA_HASH}
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
 )
 
-FetchContent_GetProperties(lua)
+FetchContent_GetProperties(${API_CLI_LUA_CONTENT_NAME})
 
-if(NOT lua_POPULATED)
-    FetchContent_Populate(lua)
+if(NOT ${API_CLI_LUA_CONTENT_NAME}_POPULATED)
+    FetchContent_Populate(${API_CLI_LUA_CONTENT_NAME})
 endif()
+
+set(lua_SOURCE_DIR "${${API_CLI_LUA_CONTENT_NAME}_SOURCE_DIR}")
 
 # Lua source files
 
@@ -504,6 +543,16 @@ if(UNIX AND API_CLI_ENABLE_LUA_POSIX)
         PUBLIC
             LUA_USE_POSIX
     )
+
+    # Lua 5.3+ exposes POSIX/XSI declarations (_longjmp, popen, mkstemp)
+    # through lprefix.h. Lua 5.2 lacks that header, so strict C mode
+    # (C_EXTENSIONS OFF) hides them unless the feature macro is set here.
+    if(LUA_VERSION STREQUAL "5.2")
+        target_compile_definitions(lua_lib
+            PRIVATE
+                _XOPEN_SOURCE=600
+        )
+    endif()
 endif()
 
 # Windows-specific Lua configuration.
@@ -535,6 +584,31 @@ FetchContent_GetProperties(sol2)
 
 if(NOT sol2_POPULATED)
     FetchContent_Populate(sol2)
+endif()
+
+# Apply sol2 compatibility adjustments for Lua 5.5 (upstream PR #1723)
+set(SOL2_COMPAT_53_FILE "${sol2_SOURCE_DIR}/include/sol/compatibility/compat-5.3.h")
+if(EXISTS "${SOL2_COMPAT_53_FILE}")
+    file(READ "${SOL2_COMPAT_53_FILE}" SOL2_COMPAT_53_CONTENT)
+    string(REPLACE "LUA_VERSION_NUM > 504" "LUA_VERSION_NUM > 505" SOL2_COMPAT_53_CONTENT "${SOL2_COMPAT_53_CONTENT}")
+    file(WRITE "${SOL2_COMPAT_53_FILE}" "${SOL2_COMPAT_53_CONTENT}")
+endif()
+
+set(SOL2_COMPAT_54_FILE "${sol2_SOURCE_DIR}/include/sol/compatibility/compat-5.4.h")
+if(EXISTS "${SOL2_COMPAT_54_FILE}")
+    file(READ "${SOL2_COMPAT_54_FILE}" SOL2_COMPAT_54_CONTENT)
+    string(REPLACE "LUA_VERSION_NUM == 504" "LUA_VERSION_NUM >= 504" SOL2_COMPAT_54_CONTENT "${SOL2_COMPAT_54_CONTENT}")
+    file(WRITE "${SOL2_COMPAT_54_FILE}" "${SOL2_COMPAT_54_CONTENT}")
+endif()
+
+set(SOL2_STATE_FILE "${sol2_SOURCE_DIR}/include/sol/state.hpp")
+if(EXISTS "${SOL2_STATE_FILE}")
+    file(READ "${SOL2_STATE_FILE}" SOL2_STATE_CONTENT)
+    if(NOT SOL2_STATE_CONTENT MATCHES "sol_lua_newstate")
+        string(REPLACE "namespace sol {" "inline lua_State* sol_lua_newstate(lua_Alloc f, void* ud, [[maybe_unused]] unsigned seed = 0) {\n#if LUA_VERSION_NUM >= 505\n\treturn ::lua_newstate(f, ud, seed);\n#else\n\treturn ::lua_newstate(f, ud);\n#endif\n}\n\nnamespace sol {" SOL2_STATE_CONTENT "${SOL2_STATE_CONTENT}")
+        string(REPLACE ": unique_base(lua_newstate(alfunc, alpointer))" ": unique_base(sol_lua_newstate(alfunc, alpointer))" SOL2_STATE_CONTENT "${SOL2_STATE_CONTENT}")
+        file(WRITE "${SOL2_STATE_FILE}" "${SOL2_STATE_CONTENT}")
+    endif()
 endif()
 
 # Boost
@@ -815,6 +889,10 @@ set(API_CLI_SCRIPTS_DIR
     "${CMAKE_CURRENT_SOURCE_DIR}/scripts"
 )
 
+set(API_CLI_ASSETS_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/public"
+)
+
 # Validate optional runtime directories
 
 if(NOT EXISTS "${API_CLI_CONFIG_DIR}")
@@ -826,6 +904,12 @@ endif()
 if(NOT EXISTS "${API_CLI_SCRIPTS_DIR}")
     message(WARNING
         "Scripts directory does not exist: ${API_CLI_SCRIPTS_DIR}"
+    )
+endif()
+
+if(NOT EXISTS "${API_CLI_ASSETS_DIR}")
+    message(WARNING
+        "Assets directory does not exists: ${API_CLI_ASSETS_DIR}"
     )
 endif()
 
@@ -879,6 +963,31 @@ if(EXISTS "${API_CLI_SCRIPTS_DIR}")
         VERBATIM
     )
 
+endif()
+
+# Copy Assets
+
+if (EXISTS "${API_CLI_ASSETS_DIR}")
+
+    add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+
+        COMMAND
+            ${CMAKE_COMMAND}
+            -E
+            make_directory
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/public"
+
+        COMMAND
+            ${CMAKE_COMMAND}
+            -E
+            copy_directory
+            "${API_CLI_ASSETS_DIR}"
+            "$<TARGET_FILE_DIR:${PROJECT_NAME}>/public"
+
+        VERBATIM
+    )
 endif()
 
 # Doxygen
@@ -959,6 +1068,16 @@ if(EXISTS "${API_CLI_SCRIPTS_DIR}")
 
 endif()
 
+if (EXISTS "${API_CLI_ASSETS_DIR}")
+
+    install(
+        DIRECTORY
+            "${API_CLI_ASSETS_DIR}/"
+        DESTINATION
+            "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/public"
+    )
+endif()
+
 # Final configuration summary
 
 message(STATUS "")
@@ -969,6 +1088,7 @@ message_box(
     "Platform: ${CMAKE_SYSTEM_NAME}"
     "Compiler: ${CMAKE_CXX_COMPILER_ID}"
     "C++ standard: C++${CMAKE_CXX_STANDARD}"
+    "Lua: ${API_CLI_LUA_RELEASE}"
     "Boost static: ${API_CLI_USE_STATIC_BOOST}"
     "Modules: ${MODULE_LIBRARIES}"
     "Docs: ${API_CLI_BUILD_DOCS}"

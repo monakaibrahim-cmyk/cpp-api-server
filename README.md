@@ -15,7 +15,7 @@ The **API Framework** provides an enterprise-ready foundation for developing RES
   - Thread-safe dependency injection via `service_registry`.
 
 - **Dynamic Lua Engine**:
-  - Embedded Lua 5.4 runtime with [Sol2](https://github.com/ThePhD/sol2) bindings.
+  - Embedded Lua runtime (5.5 default; 5.4, 5.3, 5.2 selectable via `-DLUA_VERSION`) with [Sol2](https://github.com/ThePhD/sol2) bindings.
   - Full exposure of developer-defined C++ classes, structs, namespaces, variables, and functions.
   - Dynamic route registration (`route("GET", "/path", function(req, res) ... end)`).
   - Dynamic file routing with automated prefix-based path resolution.
@@ -71,7 +71,7 @@ The **API Framework** provides an enterprise-ready foundation for developing RES
 │       ├── htaccess.h          # Apache .htaccess directive parser & evaluator
 │       ├── logger.h            # Boost.Log severity channel logger and ring buffer
 │       ├── lua_binding.h       # Sol2 namespace and usertype binding utilities
-│       ├── lua_engine.h        # Embedded Lua 5.4 state and script engine
+│       ├── lua_engine.h        # Embedded Lua state and script engine
 │       ├── metrics.h           # System resource and CPU/memory sampler
 │       ├── middleware.h        # Crow HTTP middlewares (CORS, htaccess, metrics)
 │       ├── module.h            # Modular extension component base alias
@@ -117,6 +117,25 @@ cmake -B build -DCMAKE_BUILD_TYPE=Release
 # Compile all targets
 cmake --build build -j$(nproc)
 ```
+
+### Selecting the Lua Version
+
+The embedded Lua runtime is chosen at configure time with `LUA_VERSION` (default `5.5`):
+
+| `-DLUA_VERSION=`     | Release built |
+| -------------------- | ------------- |
+| `5.5` (experimental) | Lua 5.5.1     |
+| `5.4` (default)      | Lua 5.4.8     |
+| `5.3`                | Lua 5.3.6     |
+| `5.2`                | Lua 5.2.4     |
+
+```bash
+cmake -B build -DLUA_VERSION=5.4
+```
+
+Sources are downloaded from the official `lua.org` release tarballs and verified against pinned SHA-256 hashes. Re-running `cmake` with a different value in an existing build directory triggers a full rebuild of Lua and every Sol2 consumer.
+
+> Lua scripts must use syntax supported by the selected version (e.g. integer division `//` and bitwise operators require 5.3+, `<const>`/`<close>` require 5.4+).
 
 ---
 

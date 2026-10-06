@@ -231,7 +231,7 @@ class router
     std::vector<sol::protected_function> lua_handlers_;
     std::vector<RestRoutePattern> rest_routes_;
 
-    std::filesystem::file_time_type last_routes_mtime_;
+    std::filesystem::file_time_type last_routes_modification_time_;
     std::string routes_file_path_;
     bool is_hot_reload_ = false;
 };
