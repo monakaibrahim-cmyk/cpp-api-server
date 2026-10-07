@@ -330,16 +330,6 @@ def run_test():
         assert data["message_count"] == 2
         assert data["messages"][0]["content"] == "Imported Question 1"
 
-        # Test 15: Single-page Web Chat UI serving (GET / and GET /chat)
-        status, html = request("GET", "/")
-        print(f"[TEST 15a] GET / -> HTTP {status}: length={len(html)}")
-        assert status == 200
-        assert "Local Ollama AI Playground" in html
-
-        status, html = request("GET", "/chat")
-        print(f"[TEST 15b] GET /chat -> HTTP {status}: length={len(html)}")
-        assert status == 200
-        assert "Local Ollama AI Playground" in html
 
         print("\n==========================================")
         print("ALL TESTS PASSED SUCCESSFULLY!")

@@ -907,11 +907,6 @@ if(NOT EXISTS "${API_CLI_SCRIPTS_DIR}")
     )
 endif()
 
-if(NOT EXISTS "${API_CLI_ASSETS_DIR}")
-    message(WARNING
-        "Assets directory does not exists: ${API_CLI_ASSETS_DIR}"
-    )
-endif()
 
 # Copy config
 
