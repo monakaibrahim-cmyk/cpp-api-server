@@ -30,6 +30,7 @@ void mod_ollama::on_config_load(ServerConfig &configuration)
     timeout_seconds_ = configuration.ollama_timeout_seconds;
     auto_discover_ = configuration.ollama_auto_discover;
     max_history_turns_ = configuration.ollama_max_history_turns;
+    token_limit_per_user_ = configuration.ollama_token_limit_per_user;
 }
 
 void mod_ollama::on_init(const ServerConfig &configuration)
@@ -285,6 +286,8 @@ void mod_ollama::on_handlers_register(router &server_router)
             res["default_model"] = self->default_model_;
             res["session_ttl_seconds"] = self->session_ttl_;
             res["max_history_turns"] = self->max_history_turns_;
+            res["token_limit_per_user"] = self->token_limit_per_user_;
+            res["unlimited_tokens"] = (self->token_limit_per_user_ == 0);
             res["timeout_seconds"] = self->timeout_seconds_;
 
             if (!available)
@@ -491,8 +494,14 @@ void mod_ollama::on_handlers_register(router &server_router)
             user_msg.timestamp = now_ts;
             history.push_back(user_msg);
 
+            const crow::json::rvalue *custom_options = nullptr;
+            if (body_json.has("options"))
+            {
+                custom_options = &body_json["options"];
+            }
+
             auto chat_result =
-                client->chat(target_agent, history, requested_system);
+                client->chat(target_agent, history, requested_system, custom_options);
 
             if (!chat_result.success)
             {

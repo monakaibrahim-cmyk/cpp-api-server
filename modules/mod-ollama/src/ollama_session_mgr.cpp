@@ -261,7 +261,8 @@ std::string ollama_session_mgr::export_history_markdown(
     ss << "- **Session ID**: `" << session.session_id << "`\n";
     ss << "- **Active Agent**: `" << session.selected_agent << "`\n";
     ss << "- **Messages Count**: " << history.size() << "\n";
-    ss << "- **Estimated Tokens**: " << (session.total_characters / 4) << "\n\n";
+    ss << "- **Estimated Tokens**: " << (session.total_characters / 4) << "\n";
+    ss << "- **Token Limit**: Unlimited (No limit per user)\n\n";
     ss << "---\n\n";
 
     for (size_t i = 0; i < history.size(); ++i)

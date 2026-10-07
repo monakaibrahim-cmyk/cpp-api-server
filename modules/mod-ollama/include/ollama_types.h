@@ -131,6 +131,7 @@ struct ChatSession
     std::string persona;
     size_t message_count = 0;
     size_t total_characters = 0;
+    size_t token_limit = 0; // 0 = unlimited tokens per user
 
     crow::json::wvalue to_json() const
     {
@@ -152,6 +153,8 @@ struct ChatSession
         json_session["message_count"] = message_count;
         json_session["total_characters"] = total_characters;
         json_session["estimated_tokens"] = (total_characters / 4);
+        json_session["token_limit"] = token_limit;
+        json_session["unlimited_tokens"] = true;
         return json_session;
     }
 

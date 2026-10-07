@@ -128,6 +128,9 @@ ServerConfig load_config(const std::string &lua_configuration_path)
             configuration.ollama_max_history_turns =
                 ollama_table_optional.value().get_or<size_t>(
                     "max_history_turns", configuration.ollama_max_history_turns);
+            configuration.ollama_token_limit_per_user =
+                ollama_table_optional.value().get_or<size_t>(
+                    "token_limit_per_user", configuration.ollama_token_limit_per_user);
         }
         configuration.htaccess_file = config_table.get_or<std::string>(
             "htaccess_file", configuration.htaccess_file);

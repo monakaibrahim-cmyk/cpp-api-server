@@ -195,9 +195,15 @@ struct ServerConfig
 
     /**
      * @brief Maximum number of conversation turns retained in cache sliding window.
-     * @details Default: 20 turns.
+     * @details Default: 0 (0 = unlimited / no history turn limit per user).
      */
-    size_t ollama_max_history_turns = 20;
+    size_t ollama_max_history_turns = 0;
+
+    /**
+     * @brief Maximum token consumption allowed per user session (0 = unlimited, no token limit).
+     * @details Default: 0 (unlimited).
+     */
+    size_t ollama_token_limit_per_user = 0;
 
     /**
      * @brief Path to an Apache .htaccess rules file.

@@ -32,7 +32,8 @@ config = {
         session_ttl = 3600,           -- Session and chat history TTL in cache (seconds)
         timeout_seconds = 120,        -- Timeout for Ollama LLM response generation
         auto_discover_agents = true,  -- Auto-query Ollama to discover local installed agents
-        max_history_turns = 20,       -- Sliding window max conversation turns kept in cache
+        max_history_turns = 0,        -- 0 = unlimited turns kept in cache (no turn limit)
+        token_limit_per_user = 0,     -- 0 = unlimited tokens per user (no token limit)
     },
 
     -- Optional .htaccess file (secondary option to Lua scripting rules).

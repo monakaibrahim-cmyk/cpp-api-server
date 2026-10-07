@@ -42,7 +42,8 @@ class ollama_client
      */
     ChatResult chat(const std::string &model,
                     const std::vector<ChatMessage> &messages,
-                    const std::string &system_prompt = "");
+                    const std::string &system_prompt = "",
+                    const crow::json::rvalue *custom_options = nullptr);
 
     /**
      * @brief Generates vector embeddings for one or more text inputs.

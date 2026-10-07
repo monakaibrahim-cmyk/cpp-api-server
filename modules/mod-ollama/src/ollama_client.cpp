@@ -254,7 +254,8 @@ std::vector<OllamaAgent> ollama_client::list_agents(std::string &out_error)
 
 ChatResult ollama_client::chat(const std::string &model,
                               const std::vector<ChatMessage> &messages,
-                              const std::string &system_prompt)
+                              const std::string &system_prompt,
+                              const crow::json::rvalue *custom_options)
 {
     ChatResult result;
     result.agent = model;
@@ -262,6 +263,35 @@ ChatResult ollama_client::chat(const std::string &model,
     crow::json::wvalue request_json;
     request_json["model"] = model;
     request_json["stream"] = false;
+
+    // No token limit per user by default: num_predict = -1 (infinite generation)
+    crow::json::wvalue options_val;
+    options_val["num_predict"] = -1;
+
+    if (custom_options != nullptr && custom_options->t() == crow::json::type::Object)
+    {
+        for (const auto &key : custom_options->keys())
+        {
+            const auto &v = (*custom_options)[key];
+            if (v.t() == crow::json::type::Number)
+            {
+                options_val[key] = v.d();
+            }
+            else if (v.t() == crow::json::type::String)
+            {
+                options_val[key] = v.s();
+            }
+            else if (v.t() == crow::json::type::True)
+            {
+                options_val[key] = true;
+            }
+            else if (v.t() == crow::json::type::False)
+            {
+                options_val[key] = false;
+            }
+        }
+    }
+    request_json["options"] = std::move(options_val);
 
     std::vector<crow::json::wvalue> messages_array;
 

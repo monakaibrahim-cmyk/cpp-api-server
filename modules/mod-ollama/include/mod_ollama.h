@@ -84,7 +84,8 @@ class mod_ollama : public module
     int session_ttl_ = 3600;
     int timeout_seconds_ = 120;
     bool auto_discover_ = true;
-    size_t max_history_turns_ = 20;
+    size_t max_history_turns_ = 0;
+    size_t token_limit_per_user_ = 0;
 
     mutable std::mutex personas_mutex_;
     std::unordered_map<std::string, AgentPersona> personas_;

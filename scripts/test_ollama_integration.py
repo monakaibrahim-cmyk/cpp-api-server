@@ -176,12 +176,14 @@ def run_test():
                     return e.code, json.loads(e.read().decode())
                 return e.code, e.read().decode()
 
-        # Test 1: Check Ollama status
+        # Test 1: Check Ollama status (verify no token limit)
         status, data = request("GET", "/api/ollama/status")
         print(f"[TEST 1] /api/ollama/status -> HTTP {status}: {data}")
         assert status == 200
         assert data["status"] == "ok"
         assert data["version"] == "0.3.14"
+        assert data["unlimited_tokens"] == True
+        assert data["token_limit_per_user"] == 0
 
         # Test 2: Auto-find agents + personas
         status, data = request("GET", "/api/agents")
@@ -209,6 +211,8 @@ def run_test():
         assert data["user_ip"] == "192.168.1.101"
         assert data["agent"] == "llama3:latest" # auto-selected!
         assert len(data["chat_history"]) == 2 # 1 user, 1 assistant
+        # Verify Ollama received options with num_predict: -1 (no token limit)
+        assert MockOllamaHandler.chat_calls[-1]["options"]["num_predict"] == -1
 
         # Test 4: Second chat message from IP 1 (multi-turn history caching)
         status, data = request("POST", "/api/chat", {"message": "What was my first message?"}, ip1_headers)
@@ -217,6 +221,7 @@ def run_test():
         assert len(data["chat_history"]) == 4 # 2 user, 2 assistant
         last_ollama_call = MockOllamaHandler.chat_calls[-1]
         assert len(last_ollama_call["messages"]) == 4
+        assert last_ollama_call["options"]["num_predict"] == -1
 
         # Test 5: Verify GET /api/chat/history for IP 1
         status, data = request("GET", "/api/chat/history", headers=ip1_headers)
@@ -245,12 +250,14 @@ def run_test():
         status, data = request("GET", "/api/chat/history", headers=ip1_headers)
         assert data["message_count"] == 4
 
-        # Test 8: Inspect session metadata via /api/session
+        # Test 8: Inspect session metadata via /api/session (verify unlimited tokens)
         status, data = request("GET", "/api/session", headers=ip1_headers)
         print(f"[TEST 8] /api/session (IP1) -> HTTP {status}: {data['session']}")
         assert status == 200
         assert data["session"]["user_ip"] == "192.168.1.101"
         assert data["session"]["message_count"] == 4
+        assert data["session"]["unlimited_tokens"] == True
+        assert data["session"]["token_limit"] == 0
 
         # Test 9: Clear chat history for IP 1
         status, data = request("DELETE", "/api/chat/history", headers=ip1_headers)
@@ -296,6 +303,7 @@ def run_test():
         assert status == 200
         assert "# Chat Session Export" in md_data
         assert "192.168.1.202" in md_data
+        assert "Token Limit**: Unlimited" in md_data
 
         status, json_data = request("GET", "/api/chat/export?format=json", headers=ip2_headers)
         print(f"[TEST 13b] GET /api/chat/export?format=json (IP2) -> HTTP {status}: messages={len(json_data.get('messages', []))}")
