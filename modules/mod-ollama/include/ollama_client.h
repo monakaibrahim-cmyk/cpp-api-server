@@ -44,6 +44,32 @@ class ollama_client
                     const std::vector<ChatMessage> &messages,
                     const std::string &system_prompt = "");
 
+    /**
+     * @brief Generates vector embeddings for one or more text inputs.
+     * @param[in] model Embedding model name.
+     * @param[in] inputs Text inputs to embed.
+     * @return EmbedResult containing vector embeddings.
+     */
+    EmbedResult embed(const std::string &model,
+                      const std::vector<std::string> &inputs);
+
+    /**
+     * @brief Triggers pulling a model from Ollama library.
+     */
+    bool pull_model(const std::string &model_name, std::string &out_error);
+
+    /**
+     * @brief Retrieves detailed model inspection data (modelfile, parameters, license).
+     */
+    bool show_model(const std::string &model_name,
+                    crow::json::wvalue &out_details,
+                    std::string &out_error);
+
+    /**
+     * @brief Deletes a local model from Ollama.
+     */
+    bool delete_model(const std::string &model_name, std::string &out_error);
+
     const std::string &get_host() const { return host_; }
     uint16_t get_port() const { return port_; }
     int get_timeout_seconds() const { return timeout_seconds_; }

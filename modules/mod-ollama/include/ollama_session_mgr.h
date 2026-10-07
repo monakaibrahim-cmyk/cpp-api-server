@@ -18,7 +18,8 @@ namespace api
 class ollama_session_mgr
 {
   public:
-    explicit ollama_session_mgr(int session_ttl_seconds = 3600);
+    explicit ollama_session_mgr(int session_ttl_seconds = 3600,
+                               size_t max_history_turns = 20);
 
     /**
      * @brief Extracts the client IP address from an incoming HTTP request.
@@ -43,15 +44,24 @@ class ollama_session_mgr
     bool get_session(const std::string &user_ip, ChatSession &out_session);
 
     /**
+     * @brief Updates preferences for user session (agent and system prompt).
+     */
+    void update_session(const std::string &user_ip,
+                        const std::string &agent_name = "",
+                        const std::string &custom_system = "",
+                        const std::string &persona = "");
+
+    /**
      * @brief Retrieves the cached chat history for user IP.
      */
     std::vector<ChatMessage> get_chat_history(const std::string &user_ip);
 
     /**
-     * @brief Saves updated chat history and updates session in cache.
+     * @brief Saves updated chat history and updates session in cache,
+     * applying max history turns sliding window.
      */
     void save_chat_history(const std::string &user_ip,
-                           const std::vector<ChatMessage> &history,
+                           std::vector<ChatMessage> history,
                            const std::string &agent_name);
 
     /**
@@ -63,13 +73,33 @@ class ollama_session_mgr
     /**
      * @brief Updates user's preferred agent in their session.
      */
-    void set_session_agent(const std::string &user_ip, const std::string &agent_name);
+    void set_session_agent(const std::string &user_ip,
+                           const std::string &agent_name);
+
+    /**
+     * @brief Exports conversation as a Markdown formatted document.
+     */
+    std::string export_history_markdown(const std::string &user_ip);
+
+    /**
+     * @brief Imports conversation messages into session cache.
+     */
+    void import_history(const std::string &user_ip,
+                        const std::vector<ChatMessage> &messages,
+                        bool replace = true);
 
     int get_session_ttl() const { return session_ttl_seconds_; }
     void set_session_ttl(int ttl_seconds) { session_ttl_seconds_ = ttl_seconds; }
 
+    size_t get_max_history_turns() const { return max_history_turns_; }
+    void set_max_history_turns(size_t max_turns)
+    {
+        max_history_turns_ = max_turns;
+    }
+
   private:
     int session_ttl_seconds_;
+    size_t max_history_turns_;
 
     std::string session_cache_key(const std::string &user_ip) const;
     std::string history_cache_key(const std::string &user_ip) const;

@@ -4,13 +4,17 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
+#include <iomanip>
 #include <sstream>
 
 namespace api
 {
 
-ollama_session_mgr::ollama_session_mgr(int session_ttl_seconds)
-    : session_ttl_seconds_(session_ttl_seconds)
+ollama_session_mgr::ollama_session_mgr(int session_ttl_seconds,
+                                       size_t max_history_turns)
+    : session_ttl_seconds_(session_ttl_seconds),
+      max_history_turns_(max_history_turns)
 {
 }
 
@@ -47,7 +51,6 @@ std::string ollama_session_mgr::extract_user_ip(const crow::request &req)
         std::string first_ip = (comma_pos != std::string::npos)
                                    ? forwarded.substr(0, comma_pos)
                                    : forwarded;
-        // Trim whitespace
         first_ip.erase(0, first_ip.find_first_not_of(" \t\r\n"));
         first_ip.erase(first_ip.find_last_not_of(" \t\r\n") + 1);
         if (!first_ip.empty())
@@ -75,7 +78,6 @@ std::string ollama_session_mgr::extract_user_ip(const crow::request &req)
         return req.remote_ip_address;
     }
 
-    // 4. Default fallback for local testing
     return "127.0.0.1";
 }
 
@@ -94,11 +96,13 @@ ChatSession ollama_session_mgr::get_or_create_session(
                          .count();
 
     session.user_ip = user_ip;
-    session.session_id = "sess_" + sanitize_ip(user_ip) + "_" + std::to_string(now_ts);
+    session.session_id =
+        "sess_" + sanitize_ip(user_ip) + "_" + std::to_string(now_ts);
     session.created_at = now_ts;
     session.last_active = now_ts;
     session.selected_agent = default_agent;
     session.message_count = 0;
+    session.total_characters = 0;
 
     std::string session_json = session.to_json().dump();
     s_cache_engine().set(session_cache_key(user_ip), 200, session_json,
@@ -127,6 +131,36 @@ bool ollama_session_mgr::get_session(const std::string &user_ip,
     return true;
 }
 
+void ollama_session_mgr::update_session(const std::string &user_ip,
+                                        const std::string &agent_name,
+                                        const std::string &custom_system,
+                                        const std::string &persona)
+{
+    ChatSession session = get_or_create_session(user_ip);
+    if (!agent_name.empty())
+    {
+        session.selected_agent = agent_name;
+    }
+    if (!custom_system.empty())
+    {
+        session.custom_system_prompt = custom_system;
+    }
+    if (!persona.empty())
+    {
+        session.persona = persona;
+    }
+
+    auto now = std::chrono::system_clock::now();
+    session.last_active = std::chrono::duration_cast<std::chrono::seconds>(
+                              now.time_since_epoch())
+                              .count();
+
+    std::string session_json = session.to_json().dump();
+    s_cache_engine().set(session_cache_key(user_ip), 200, session_json,
+                         "application/json",
+                         std::chrono::seconds(session_ttl_seconds_));
+}
+
 std::vector<ChatMessage> ollama_session_mgr::get_chat_history(
     const std::string &user_ip)
 {
@@ -153,7 +187,7 @@ std::vector<ChatMessage> ollama_session_mgr::get_chat_history(
 }
 
 void ollama_session_mgr::save_chat_history(
-    const std::string &user_ip, const std::vector<ChatMessage> &history,
+    const std::string &user_ip, std::vector<ChatMessage> history,
     const std::string &agent_name)
 {
     auto now = std::chrono::system_clock::now();
@@ -161,10 +195,19 @@ void ollama_session_mgr::save_chat_history(
                          now.time_since_epoch())
                          .count();
 
-    // 1. Serialize history array
+    // Enforce sliding window on conversation turns if exceeding limit
+    if (max_history_turns_ > 0 && history.size() > max_history_turns_)
+    {
+        size_t excess = history.size() - max_history_turns_;
+        history.erase(history.begin(), history.begin() + excess);
+    }
+
+    // Calculate total character length
+    size_t char_count = 0;
     std::vector<crow::json::wvalue> messages_array;
     for (const auto &item : history)
     {
+        char_count += item.content.size();
         messages_array.push_back(item.to_json());
     }
 
@@ -176,10 +219,11 @@ void ollama_session_mgr::save_chat_history(
                          "application/json",
                          std::chrono::seconds(session_ttl_seconds_));
 
-    // 2. Update and refresh session metadata
+    // Update and refresh session metadata
     ChatSession session = get_or_create_session(user_ip, agent_name);
     session.last_active = now_ts;
     session.message_count = history.size();
+    session.total_characters = char_count;
     if (!agent_name.empty())
     {
         session.selected_agent = agent_name;
@@ -201,13 +245,72 @@ bool ollama_session_mgr::clear_session(const std::string &user_ip)
 void ollama_session_mgr::set_session_agent(const std::string &user_ip,
                                           const std::string &agent_name)
 {
-    ChatSession session = get_or_create_session(user_ip, agent_name);
-    session.selected_agent = agent_name;
+    update_session(user_ip, agent_name, "");
+}
 
-    std::string session_json = session.to_json().dump();
-    s_cache_engine().set(session_cache_key(user_ip), 200, session_json,
-                         "application/json",
-                         std::chrono::seconds(session_ttl_seconds_));
+std::string ollama_session_mgr::export_history_markdown(
+    const std::string &user_ip)
+{
+    ChatSession session;
+    get_session(user_ip, session);
+    auto history = get_chat_history(user_ip);
+
+    std::ostringstream ss;
+    ss << "# Chat Session Export\n\n";
+    ss << "- **User IP**: `" << user_ip << "`\n";
+    ss << "- **Session ID**: `" << session.session_id << "`\n";
+    ss << "- **Active Agent**: `" << session.selected_agent << "`\n";
+    ss << "- **Messages Count**: " << history.size() << "\n";
+    ss << "- **Estimated Tokens**: " << (session.total_characters / 4) << "\n\n";
+    ss << "---\n\n";
+
+    for (size_t i = 0; i < history.size(); ++i)
+    {
+        const auto &msg = history[i];
+        std::time_t t = static_cast<std::time_t>(msg.timestamp);
+        std::tm tm_buf{};
+#if defined(_WIN32) || defined(_WIN64)
+        localtime_s(&tm_buf, &t);
+#else
+        localtime_r(&t, &tm_buf);
+#endif
+        char time_str[32];
+        std::strftime(time_str, sizeof(time_str), "%Y-%m-%d %H:%M:%S", &tm_buf);
+
+        if (msg.role == "user")
+        {
+            ss << "### 👤 User (" << time_str << ")\n\n";
+            ss << msg.content << "\n\n";
+        }
+        else if (msg.role == "assistant")
+        {
+            ss << "### 🤖 Assistant ["
+               << (msg.agent.empty() ? session.selected_agent : msg.agent)
+               << "] (" << time_str << ")\n\n";
+            ss << msg.content << "\n\n";
+        }
+        else
+        {
+            ss << "### ⚙️ " << msg.role << " (" << time_str << ")\n\n";
+            ss << msg.content << "\n\n";
+        }
+        ss << "---\n\n";
+    }
+
+    return ss.str();
+}
+
+void ollama_session_mgr::import_history(
+    const std::string &user_ip, const std::vector<ChatMessage> &messages,
+    bool replace)
+{
+    std::vector<ChatMessage> history;
+    if (!replace)
+    {
+        history = get_chat_history(user_ip);
+    }
+    history.insert(history.end(), messages.begin(), messages.end());
+    save_chat_history(user_ip, std::move(history), "");
 }
 
 } // namespace api

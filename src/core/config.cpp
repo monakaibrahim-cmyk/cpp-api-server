@@ -125,6 +125,9 @@ ServerConfig load_config(const std::string &lua_configuration_path)
             configuration.ollama_auto_discover =
                 ollama_table_optional.value().get_or<bool>(
                     "auto_discover_agents", configuration.ollama_auto_discover);
+            configuration.ollama_max_history_turns =
+                ollama_table_optional.value().get_or<size_t>(
+                    "max_history_turns", configuration.ollama_max_history_turns);
         }
         configuration.htaccess_file = config_table.get_or<std::string>(
             "htaccess_file", configuration.htaccess_file);

@@ -42,6 +42,29 @@ struct OllamaAgent
 };
 
 /**
+ * @brief Represents a specialized agent persona with tailored system instructions.
+ */
+struct AgentPersona
+{
+    std::string id;
+    std::string name;
+    std::string description;
+    std::string system_prompt;
+    std::string model; // Specific model override, or empty for default
+
+    crow::json::wvalue to_json() const
+    {
+        crow::json::wvalue json_p;
+        json_p["id"] = id;
+        json_p["name"] = name;
+        json_p["description"] = description;
+        json_p["system_prompt"] = system_prompt;
+        json_p["model"] = model;
+        return json_p;
+    }
+};
+
+/**
  * @brief Represents a single turn in a chat conversation.
  */
 struct ChatMessage
@@ -104,7 +127,10 @@ struct ChatSession
     int64_t created_at = 0;
     int64_t last_active = 0;
     std::string selected_agent;
+    std::string custom_system_prompt;
+    std::string persona;
     size_t message_count = 0;
+    size_t total_characters = 0;
 
     crow::json::wvalue to_json() const
     {
@@ -114,7 +140,18 @@ struct ChatSession
         json_session["created_at"] = created_at;
         json_session["last_active"] = last_active;
         json_session["selected_agent"] = selected_agent;
+        json_session["preferred_agent"] = selected_agent;
+        if (!persona.empty())
+        {
+            json_session["persona"] = persona;
+        }
+        if (!custom_system_prompt.empty())
+        {
+            json_session["custom_system_prompt"] = custom_system_prompt;
+        }
         json_session["message_count"] = message_count;
+        json_session["total_characters"] = total_characters;
+        json_session["estimated_tokens"] = (total_characters / 4);
         return json_session;
     }
 
@@ -141,9 +178,25 @@ struct ChatSession
         {
             session.selected_agent = jv["selected_agent"].s();
         }
+        else if (jv.has("preferred_agent"))
+        {
+            session.selected_agent = jv["preferred_agent"].s();
+        }
+        if (jv.has("persona"))
+        {
+            session.persona = jv["persona"].s();
+        }
+        if (jv.has("custom_system_prompt"))
+        {
+            session.custom_system_prompt = jv["custom_system_prompt"].s();
+        }
         if (jv.has("message_count"))
         {
             session.message_count = static_cast<size_t>(jv["message_count"].u());
+        }
+        if (jv.has("total_characters"))
+        {
+            session.total_characters = static_cast<size_t>(jv["total_characters"].u());
         }
         return session;
     }
@@ -160,6 +213,19 @@ struct ChatResult
     std::string error;
     int64_t total_duration_ns = 0;
     int eval_count = 0;
+};
+
+/**
+ * @brief Result of a vector embedding request to Ollama.
+ */
+struct EmbedResult
+{
+    bool success = false;
+    std::string model;
+    std::string error;
+    std::vector<std::vector<double>> embeddings;
+    int64_t total_duration_ns = 0;
+    int prompt_eval_count = 0;
 };
 
 } // namespace api

@@ -71,6 +71,33 @@ route("POST", "/api/echo", function(req)
     }
 end)
 
+local function serve_public_file(filepath, content_type)
+    local f = io.open(filepath, "r")
+    if f then
+        local content = f:read("*a")
+        f:close()
+        return {
+            status = 200,
+            body = content,
+            content_type = content_type or "text/html; charset=utf-8"
+        }
+    end
+    return {
+        status = 404,
+        body = '{"error":"Resource not found","status":404}',
+        content_type = "application/json"
+    }
+end
+
+-- Web Chat Playground UI
+route("GET", "/", function(req)
+    return serve_public_file("public/index.html", "text/html; charset=utf-8")
+end)
+
+route("GET", "/chat", function(req)
+    return serve_public_file("public/index.html", "text/html; charset=utf-8")
+end)
+
 -- ═══════════════════════════════════════════════════════════════════════════
 -- Local Ollama Model Integration, Auto-Discovery & Session/History Caching
 -- ═══════════════════════════════════════════════════════════════════════════
@@ -82,8 +109,22 @@ route("POST", "/api/ollama/chat", "ollama.chat")
 route("GET", "/api/chat/history", "ollama.history")
 route("DELETE", "/api/chat/history", "ollama.clear_history")
 route("POST", "/api/chat/clear", "ollama.clear_history")
+route("GET", "/api/chat/export", "ollama.export")
+route("POST", "/api/chat/import", "ollama.import")
 route("GET", "/api/session", "ollama.session")
+route("POST", "/api/session", "ollama.set_session")
+route("PUT", "/api/session", "ollama.set_session")
 route("DELETE", "/api/session", "ollama.clear_history")
+
+-- Vector Embeddings & Model Management
+route("POST", "/api/embed", "ollama.embed")
+route("POST", "/api/embeddings", "ollama.embed")
+route("POST", "/api/models/pull", "ollama.pull")
+route("POST", "/api/agents/pull", "ollama.pull")
+route("POST", "/api/models/show", "ollama.show")
+route("GET", "/api/models/show", "ollama.show")
+route("POST", "/api/models/delete", "ollama.delete")
+route("DELETE", "/api/models/delete", "ollama.delete")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- C++ Native Authentication Endpoints (mod_jwt)

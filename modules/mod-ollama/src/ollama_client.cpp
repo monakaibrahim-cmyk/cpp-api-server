@@ -36,12 +36,12 @@ bool ollama_client::http_request(const std::string &method,
         tcp::resolver resolver(ioc);
         beast::tcp_stream stream(ioc);
 
-        int effective_timeout = timeout_sec > 0 ? timeout_sec : timeout_seconds_;
+        int effective_timeout =
+            timeout_sec > 0 ? timeout_sec : timeout_seconds_;
         stream.expires_after(std::chrono::seconds(effective_timeout));
 
         beast::error_code ec;
-        auto const results =
-            resolver.resolve(host_, std::to_string(port_), ec);
+        auto const results = resolver.resolve(host_, std::to_string(port_), ec);
         if (ec)
         {
             error_msg = "Resolution error for " + host_ + ":" +
@@ -57,14 +57,22 @@ bool ollama_client::http_request(const std::string &method,
             return false;
         }
 
-        http::verb verb =
-            (method == "POST") ? http::verb::post : http::verb::get;
+        http::verb verb = http::verb::get;
+        if (method == "POST")
+        {
+            verb = http::verb::post;
+        }
+        else if (method == "DELETE")
+        {
+            verb = http::verb::delete_;
+        }
+
         http::request<http::string_body> req{verb, target, 11};
         req.set(http::field::host, host_ + ":" + std::to_string(port_));
         req.set(http::field::user_agent, "API-cli-ollama/1.0");
         req.set(http::field::accept, "application/json");
 
-        if (method == "POST")
+        if (!body.empty() || method == "POST" || method == "DELETE")
         {
             req.set(http::field::content_type, "application/json");
             req.body() = body;
@@ -139,7 +147,6 @@ std::vector<OllamaAgent> ollama_client::list_agents(std::string &out_error)
     std::string response_body;
     int status_code = 0;
 
-    // Check which models are actively running in memory via /api/ps
     std::unordered_set<std::string> running_models;
     std::string ps_response;
     int ps_status = 0;
@@ -164,7 +171,6 @@ std::vector<OllamaAgent> ollama_client::list_agents(std::string &out_error)
         }
     }
 
-    // Auto-discover all installed local models via /api/tags
     bool ok = http_request("GET", "/api/tags", "", 10, response_body,
                            status_code, out_error);
     if (!ok || status_code != 200)
@@ -331,6 +337,182 @@ ChatResult ollama_client::chat(const std::string &model,
 
     result.success = true;
     return result;
+}
+
+EmbedResult ollama_client::embed(const std::string &model,
+                                 const std::vector<std::string> &inputs)
+{
+    EmbedResult result;
+    result.model = model;
+
+    if (inputs.empty())
+    {
+        result.success = true;
+        return result;
+    }
+
+    crow::json::wvalue request_json;
+    request_json["model"] = model;
+
+    if (inputs.size() == 1)
+    {
+        request_json["input"] = inputs.front();
+    }
+    else
+    {
+        std::vector<crow::json::wvalue> inputs_array;
+        for (const auto &text : inputs)
+        {
+            inputs_array.push_back(text);
+        }
+        request_json["input"] = std::move(inputs_array);
+    }
+
+    std::string payload_body = request_json.dump();
+    std::string response_body;
+    int status_code = 0;
+    std::string error_message;
+
+    bool ok = http_request("POST", "/api/embed", payload_body, timeout_seconds_,
+                           response_body, status_code, error_message);
+
+    // Fallback to legacy /api/embeddings endpoint if /api/embed returned 404
+    if (ok && status_code == 404)
+    {
+        for (const auto &text : inputs)
+        {
+            crow::json::wvalue leg_req;
+            leg_req["model"] = model;
+            leg_req["prompt"] = text;
+            std::string leg_body;
+            int leg_code = 0;
+            std::string leg_err;
+            if (http_request("POST", "/api/embeddings", leg_req.dump(),
+                             timeout_seconds_, leg_body, leg_code, leg_err) &&
+                leg_code == 200)
+            {
+                auto parsed_leg = crow::json::load(leg_body);
+                if (parsed_leg && parsed_leg.has("embedding"))
+                {
+                    std::vector<double> vector_values;
+                    for (const auto &val : parsed_leg["embedding"])
+                    {
+                        vector_values.push_back(val.d());
+                    }
+                    result.embeddings.push_back(std::move(vector_values));
+                }
+            }
+        }
+        if (!result.embeddings.empty())
+        {
+            result.success = true;
+            return result;
+        }
+    }
+
+    if (!ok || status_code != 200)
+    {
+        result.success = false;
+        result.error = error_message.empty()
+                           ? "Ollama returned HTTP " +
+                                 std::to_string(status_code) + ": " +
+                                 response_body
+                           : error_message;
+        return result;
+    }
+
+    auto parsed = crow::json::load(response_body);
+    if (!parsed || !parsed.has("embeddings"))
+    {
+        result.success = false;
+        result.error = "Invalid JSON response or missing 'embeddings' field";
+        return result;
+    }
+
+    for (const auto &vec_obj : parsed["embeddings"])
+    {
+        std::vector<double> vector_values;
+        for (size_t index = 0; index < vec_obj.size(); ++index)
+        {
+            vector_values.push_back(vec_obj[index].d());
+        }
+        result.embeddings.push_back(std::move(vector_values));
+    }
+
+    if (parsed.has("total_duration"))
+    {
+        result.total_duration_ns = parsed["total_duration"].i();
+    }
+    if (parsed.has("prompt_eval_count"))
+    {
+        result.prompt_eval_count = static_cast<int>(parsed["prompt_eval_count"].i());
+    }
+
+    result.success = true;
+    return result;
+}
+
+bool ollama_client::pull_model(const std::string &model_name,
+                              std::string &out_error)
+{
+    crow::json::wvalue request_json;
+    request_json["model"] = model_name;
+    request_json["stream"] = false;
+
+    std::string response_body;
+    int status_code = 0;
+
+    bool ok = http_request("POST", "/api/pull", request_json.dump(), 600,
+                           response_body, status_code, out_error);
+    return ok && status_code == 200;
+}
+
+bool ollama_client::show_model(const std::string &model_name,
+                              crow::json::wvalue &out_details,
+                              std::string &out_error)
+{
+    crow::json::wvalue request_json;
+    request_json["model"] = model_name;
+
+    std::string response_body;
+    int status_code = 0;
+
+    bool ok = http_request("POST", "/api/show", request_json.dump(), 30,
+                           response_body, status_code, out_error);
+    if (!ok || status_code != 200)
+    {
+        if (out_error.empty())
+        {
+            out_error =
+                "Ollama returned HTTP " + std::to_string(status_code) + ": " +
+                response_body;
+        }
+        return false;
+    }
+
+    auto parsed = crow::json::load(response_body);
+    if (!parsed)
+    {
+        out_error = "Failed to parse model inspection JSON from Ollama";
+        return false;
+    }
+
+    out_details = crow::json::wvalue(parsed);
+    return true;
+}
+
+bool ollama_client::delete_model(const std::string &model_name,
+                                std::string &out_error)
+{
+    crow::json::wvalue request_json;
+    request_json["model"] = model_name;
+
+    std::string response_body;
+    int status_code = 0;
+
+    bool ok = http_request("DELETE", "/api/delete", request_json.dump(), 30,
+                           response_body, status_code, out_error);
+    return ok && (status_code == 200 || status_code == 204);
 }
 
 } // namespace api

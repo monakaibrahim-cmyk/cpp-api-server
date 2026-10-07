@@ -194,6 +194,12 @@ struct ServerConfig
     bool ollama_auto_discover = true;
 
     /**
+     * @brief Maximum number of conversation turns retained in cache sliding window.
+     * @details Default: 20 turns.
+     */
+    size_t ollama_max_history_turns = 20;
+
+    /**
      * @brief Path to an Apache .htaccess rules file.
      * @details Default: "". If empty or not found on disk, the system evaluates
      * rewrite and access rules defined dynamically in Lua via @ref
