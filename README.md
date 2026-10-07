@@ -103,10 +103,28 @@ The **API Framework** provides an enterprise-ready foundation for developing RES
 
 ### Prerequisites
 
-- Modern C++ compiler with C++26 support (e.g. GCC 14+ or Clang 19+)
+- Modern C++ compiler with C++26/C++23 support (GCC 14+ or Clang 19+)
 - CMake 3.25+
-- Boost libraries (Log, Thread, System)
-- Doxygen 1.9.5+ and Graphviz (`dot`) for documentation generation
+- Boost libraries (`libboost-log-dev`, `libboost-thread-dev`, `libboost-system-dev`, `libboost-dev`)
+- OpenSSL development headers (`libssl-dev`)
+- Doxygen 1.9.5+ and Graphviz (`dot`) for documentation generation (optional)
+
+### Automated Dependency Installation (Debian & Ubuntu)
+
+To automatically install all dependencies on Debian (12/13+) and Ubuntu (22.04/24.04+):
+
+```bash
+# Run the installation script (uses sudo when running as non-root)
+./install_dependencies.sh
+
+# Non-interactive mode (e.g. for CI/Docker)
+./install_dependencies.sh -y
+
+# Optional flags
+./install_dependencies.sh --no-docs      # Skip Doxygen & Graphviz
+./install_dependencies.sh --with-ollama  # Also install local Ollama CLI daemon
+./install_dependencies.sh --dry-run      # Preview operations without installing
+```
 
 ### Compilation
 
