@@ -20,11 +20,12 @@ The **API Framework** provides an enterprise-ready foundation for developing RES
   - Dynamic route registration (`route("GET", "/path", function(req, res) ... end)`).
   - Dynamic file routing with automated prefix-based path resolution.
 
-- **Eloquent-Style ORM & Scaffolding**:
-  - Fluent query builder (`api::s_orm().table(...)` in C++ and `DB.table(...)` in Lua).
-  - Chainable queries supporting `select`, `where`, `join`, `order_by`, `limit`, `offset`, `group_by`, `insert`, `update`, `delete`, `increment`, and transactions.
-  - CLI scaffolding generator (`--db:scaffold`, `--make:model`, `--make:migration`) creating Lua models and migrations directly from database schema inspection.
-  - Pluggable database driver architecture with customizable database connector overrides.
+- **Local Ollama Model Integration & Auto-Discovery**:
+  - Direct communication with local Ollama daemon (`http://127.0.0.1:11434`) via asynchronous Boost.Beast HTTP client.
+  - Auto-discovery of installed local models / agents (`GET /api/agents` & `/api/tags`).
+  - Client session management via in-memory LRU cache identified by user IP.
+  - Multi-turn conversation and chat history caching (`chat_history:<user_ip>`).
+  - Endpoints for status (`/api/ollama/status`), agents (`/api/agents`), chat (`/api/chat`), history (`/api/chat/history`), and session clearance.
 
 - **Apache `.htaccess` Emulation**:
   - Native parser and evaluator for standard Apache configuration directives.
@@ -76,7 +77,6 @@ The **API Framework** provides an enterprise-ready foundation for developing RES
 │       ├── middleware.h        # Crow HTTP middlewares (CORS, htaccess, metrics)
 │       ├── module.h            # Modular extension component base alias
 │       ├── module_registry.h   # Module discovery registry
-│       ├── orm.h               # Eloquent ORM engine and fluent query builder
 │       ├── router.h            # Unified C++ and Lua HTTP request router
 │       ├── script_mgr.h        # Central lifecycle hook manager and dispatchers
 │       ├── server.h            # Asynchronous Crow HTTP server wrapper
@@ -84,14 +84,14 @@ The **API Framework** provides an enterprise-ready foundation for developing RES
 │       └── thread_pool.h       # Asynchronous FIFO worker thread pool
 ├── modules/
 │   ├── create_module.sh        # Shell script to scaffold new C++ modules
-│   ├── mod_orm/                # Pluggable ORM module implementing database drivers
+│   ├── mod_jwt/                # RFC 7519 JWT signing and verification module
+│   ├── mod_ollama/             # Ollama AI integration, agent discovery & session cache
 │   └── mod_template/           # Template module illustrating class & struct Lua bindings
 ├── scripts/
 │   ├── routes.lua              # Application HTTP routes defined in Lua
-│   ├── models/                 # Eloquent database models in Lua
-│   └── migrations/             # Database migration scripts in Lua
+│   └── test_ollama_integration.py # Integration test suite for Ollama endpoints
 └── src/                        # Core C++ implementation sources (.cpp)
-    ├── core/                   # Core infrastructure (cache, config, logger, metrics, orm)
+    ├── core/                   # Core infrastructure (cache, config, logger, metrics)
     ├── dashboard/              # FTXUI dashboard rendering logic
     ├── scripting/              # Lua engine and script manager implementations
     └── server/                 # Crow server, connection tracker, and routing logic

@@ -1,0 +1,13 @@
+-- mod_ollama configuration
+-- Controls local Ollama LLM integration, agent auto-discovery, and IP session caching.
+
+mod_ollama = {
+    enabled = true,
+    host = "127.0.0.1",
+    port = 11434,
+    default_model = "",          -- Empty to auto-select from discovered local agents
+    system_prompt = "You are a helpful AI assistant.",
+    session_ttl = 3600,           -- 1 hour cache TTL for session and chat history
+    timeout_seconds = 120,        -- Request timeout for LLM inference
+    auto_discover_agents = true,  -- Auto-query Ollama /api/tags for installed models
+}

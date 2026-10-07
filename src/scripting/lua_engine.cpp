@@ -107,10 +107,6 @@ void lua_engine::setup_package_path(const std::string &base_directory)
     if (filesystem::exists("modules") && filesystem::is_directory("modules"))
     {
         extra_paths += ";modules/?/lua/?.lua;modules/?/lua/?/init.lua";
-        extra_paths +=
-            ";modules/mod-orm/lua/?.lua;modules/mod-orm/lua/?/init.lua";
-        extra_paths +=
-            ";modules/mod_orm/lua/?.lua;modules/mod_orm/lua/?/init.lua";
     }
 
     std::string script =
@@ -134,8 +130,14 @@ void lua_engine::bind_core_api(metrics_collector *metrics_collector_instance,
         &ServerConfig::max_body_size, "scripts_dir", &ServerConfig::scripts_dir,
         "config_dir", &ServerConfig::config_dir, "cache_enabled",
         &ServerConfig::cache_enabled, "cache_max_items",
-        &ServerConfig::cache_max_items, "db_driver", &ServerConfig::db_driver,
-        "db_connection", &ServerConfig::db_connection, "htaccess_file",
+        &ServerConfig::cache_max_items, "ollama_enabled",
+        &ServerConfig::ollama_enabled, "ollama_host",
+        &ServerConfig::ollama_host, "ollama_port",
+        &ServerConfig::ollama_port, "ollama_default_model",
+        &ServerConfig::ollama_default_model, "ollama_system_prompt",
+        &ServerConfig::ollama_system_prompt, "ollama_session_ttl",
+        &ServerConfig::ollama_session_ttl, "ollama_timeout_seconds",
+        &ServerConfig::ollama_timeout_seconds, "htaccess_file",
         &ServerConfig::htaccess_file);
 
     lua_.new_usertype<ConnectionStats>(

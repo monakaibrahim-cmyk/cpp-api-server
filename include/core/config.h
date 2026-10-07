@@ -146,20 +146,52 @@ struct ServerConfig
     std::unordered_map<std::string, std::string> log_channels;
 
     /**
-     * @brief Identifier of the database driver to activate.
-     * @details Default: "" (no active driver / template scaffold mode). Set to
-     * driver factory name (e.g. "mysql", "postgres", "sqlite") registered by
-     * modular C++ plugins.
+     * @brief Master toggle for Ollama AI integration.
+     * @details Default: true.
      */
-    std::string db_driver = "";
+    bool ollama_enabled = true;
 
     /**
-     * @brief Data Source Name (DSN) or connection string for database driver
-     * connection.
-     * @details Passed directly to @ref db_driver::connect during module
-     * initialization.
+     * @brief Host address for the local Ollama daemon.
+     * @details Default: "127.0.0.1".
      */
-    std::string db_connection = "";
+    std::string ollama_host = "127.0.0.1";
+
+    /**
+     * @brief Port number for the local Ollama daemon.
+     * @details Default: 11434.
+     */
+    uint16_t ollama_port = 11434;
+
+    /**
+     * @brief Default model / agent to use when none is explicitly specified.
+     * @details Default: "" (auto-selects first discovered agent from Ollama).
+     */
+    std::string ollama_default_model = "";
+
+    /**
+     * @brief Default system prompt applied to chat sessions.
+     * @details Default: "You are a helpful AI assistant."
+     */
+    std::string ollama_system_prompt = "You are a helpful AI assistant.";
+
+    /**
+     * @brief Session and chat history time-to-live in seconds.
+     * @details Default: 3600 (1 hour). Stored in LRU cache by user IP.
+     */
+    int ollama_session_ttl = 3600;
+
+    /**
+     * @brief Request timeout in seconds for Ollama HTTP calls.
+     * @details Default: 120 seconds.
+     */
+    int ollama_timeout_seconds = 120;
+
+    /**
+     * @brief Auto-discovery flag for finding local agents via Ollama tags.
+     * @details Default: true.
+     */
+    bool ollama_auto_discover = true;
 
     /**
      * @brief Path to an Apache .htaccess rules file.

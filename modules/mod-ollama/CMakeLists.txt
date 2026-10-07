@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-set(MOD_NAME mod-orm)
+set(MOD_NAME mod-ollama)
 
 file(GLOB_RECURSE MOD_SOURCES CONFIGURE_DEPENDS
     src/*.cpp
@@ -14,6 +14,7 @@ target_include_directories(${MOD_NAME} PUBLIC
     include
     ${CMAKE_SOURCE_DIR}/include
     ${sol2_SOURCE_DIR}/include
+    ${Boost_INCLUDE_DIRS}
 )
 
 target_link_libraries(${MOD_NAME} PUBLIC

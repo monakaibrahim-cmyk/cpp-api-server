@@ -71,64 +71,19 @@ route("POST", "/api/echo", function(req)
     }
 end)
 
--- Database Scaffold ORM introspection endpoint
-route("GET", "/api/db/status", function(req)
-    local is_conn = false
-    local drv_name = "none"
-    local driver_list = {}
-
-    if DB then
-        if DB.is_connected then
-            is_conn = DB.is_connected()
-        end
-        if DB.driver_name then
-            drv_name = DB.driver_name()
-        end
-        if DB.drivers then
-            driver_list = DB.drivers()
-        end
-    end
-
-    local drivers_json = {}
-    for _, d in ipairs(driver_list) do
-        table.insert(drivers_json, string.format("%q", d))
-    end
-
-    local body = string.format(
-        '{"status":"ok","connected":%s,"active_driver":%q,"registered_drivers":[%s]}',
-        is_conn and "true" or "false",
-        drv_name,
-        table.concat(drivers_json, ",")
-    )
-
-    return {
-        status = 200,
-        body = body,
-        content_type = "application/json"
-    }
-end)
-
--- Eloquent ORM & Artisan introspection endpoint
-route("GET", "/api/db/artisan", function(req)
-    local tables = Artisan and Artisan.tables() or {}
-    local tables_json = {}
-
-    for _, t in ipairs(tables) do
-        table.insert(tables_json, string.format("%q", t))
-    end
-
-    local body = string.format(
-        '{"tables":[%s],"artisan_available":%s}',
-        table.concat(tables_json, ","),
-        Artisan ~= nil and "true" or "false"
-    )
-
-    return {
-        status = 200,
-        body = body,
-        content_type = "application/json"
-    }
-end)
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Local Ollama Model Integration, Auto-Discovery & Session/History Caching
+-- ═══════════════════════════════════════════════════════════════════════════
+route("GET", "/api/ollama/status", "ollama.status")
+route("GET", "/api/agents", "ollama.agents")
+route("GET", "/api/ollama/agents", "ollama.agents")
+route("POST", "/api/chat", "ollama.chat")
+route("POST", "/api/ollama/chat", "ollama.chat")
+route("GET", "/api/chat/history", "ollama.history")
+route("DELETE", "/api/chat/history", "ollama.clear_history")
+route("POST", "/api/chat/clear", "ollama.clear_history")
+route("GET", "/api/session", "ollama.session")
+route("DELETE", "/api/session", "ollama.clear_history")
 
 -- ═══════════════════════════════════════════════════════════════════════════
 -- C++ Native Authentication Endpoints (mod_jwt)

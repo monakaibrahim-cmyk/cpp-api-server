@@ -22,12 +22,16 @@ config = {
         metrics = "debug",
     },
 
-    -- Database configuration (Scaffold ORM)
-    -- Pluggable template scaffold: developers can add their chosen driver in C++
-    -- (e.g. MySQL, PostgreSQL, SQLite, etc.) and configure it here.
-    db = {
-        driver = "",
-        connection = "",
+    -- Ollama Local AI Model Configuration
+    ollama = {
+        enabled = true,
+        host = "127.0.0.1",
+        port = 11434,
+        default_model = "",          -- If empty, auto-selected from discovered agents
+        system_prompt = "You are a helpful AI assistant.",
+        session_ttl = 3600,           -- Session and chat history TTL in cache (seconds)
+        timeout_seconds = 120,        -- Timeout for Ollama LLM response generation
+        auto_discover_agents = true,  -- Auto-query Ollama to discover local installed agents
     },
 
     -- Optional .htaccess file (secondary option to Lua scripting rules).

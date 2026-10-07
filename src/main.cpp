@@ -28,7 +28,6 @@
 #include <scripting/lua_engine.h>
 #include <core/metrics.h>
 #include <server/middleware.h>
-#include <core/orm.h>
 #include <server/router.h>
 #include <scripting/script_mgr.h>
 #include <server/server.h>
@@ -50,14 +49,6 @@ int main(int argc, char *argv[])
     bool background_child = false;
 #endif
     bool run_background = false;
-
-    std::string make_model_name;
-    std::string make_migration_name;
-    std::string table_override;
-    std::string db_scaffold_target;
-    std::string models_dir = MODEL_DIRECTORY;
-    std::string migrations_dir = MIGRATION_DIRECTORY;
-    bool list_db_tables = false;
 
     for (int index = 1; index < argc; ++index)
     {
@@ -88,34 +79,6 @@ int main(int argc, char *argv[])
         {
             no_dashboard = true;
         }
-        else if (argument == "--make:model" && index + 1 < argc)
-        {
-            make_model_name = argv[++index];
-        }
-        else if (argument == "--make:migration" && index + 1 < argc)
-        {
-            make_migration_name = argv[++index];
-        }
-        else if (argument == "--table" && index + 1 < argc)
-        {
-            table_override = argv[++index];
-        }
-        else if (argument == "--db:scaffold" && index + 1 < argc)
-        {
-            db_scaffold_target = argv[++index];
-        }
-        else if (argument == "--db:tables")
-        {
-            list_db_tables = true;
-        }
-        else if (argument == "--models-dir" && index + 1 < argc)
-        {
-            models_dir = argv[++index];
-        }
-        else if (argument == "--migrations-dir" && index + 1 < argc)
-        {
-            migrations_dir = argv[++index];
-        }
         else if (argument == "--help")
         {
             std::println(
@@ -127,20 +90,6 @@ int main(int argc, char *argv[])
                 "(daemon mode)\n"
                 "  --no-dashboard                Run in foreground without "
                 "terminal UI\n"
-                "  --make:model <Name>           Generate a new Eloquent model "
-                "in Lua\n"
-                "  --make:migration <Name>       Generate a new database "
-                "migration in Lua\n"
-                "  --table <table_name>          Explicit database table name "
-                "for model/migration\n"
-                "  --db:scaffold <table|all>     Scaffold model(s) and "
-                "migration(s) from database\n"
-                "  --db:tables                   List all discovered database "
-                "tables\n"
-                "  --models-dir <dir>            Target directory for models "
-                "(default: scripts/models)\n"
-                "  --migrations-dir <dir>        Target directory for "
-                "migrations (default: scripts/migrations)\n"
                 "  --help                        Display this help");
 
             return EXIT_SUCCESS;
@@ -148,204 +97,6 @@ int main(int argc, char *argv[])
     }
 
     auto configuration = api::load_config(config_path);
-
-    bool is_cli_command = !make_model_name.empty() ||
-                          !make_migration_name.empty() ||
-                          !db_scaffold_target.empty() || list_db_tables;
-
-    if (is_cli_command)
-    {
-        api::init_logging(configuration);
-
-        auto &script_manager = api::s_script_mgr();
-
-        script_manager.initialize();
-        script_manager.on_config_load(configuration);
-
-        if (list_db_tables)
-        {
-            auto tables = api::s_orm().get_tables();
-
-            if (tables.empty())
-            {
-                std::println("No database tables discovered (driver: {}).",
-                             api::s_orm().driver_name());
-            }
-            else
-            {
-                std::println("Discovered database tables ({}):", tables.size());
-
-                for (const auto &table_name : tables)
-                {
-                    std::println("  - {}", table_name);
-                }
-            }
-
-            return EXIT_SUCCESS;
-        }
-
-        if (!db_scaffold_target.empty())
-        {
-            if (db_scaffold_target == "all")
-            {
-                size_t scaffolded_count = api::s_orm().scaffold_all_tables(
-                    models_dir, migrations_dir);
-
-                std::println("Successfully scaffolded {} database table(s) "
-                             "into '{}' and '{}'.",
-                             scaffolded_count, models_dir, migrations_dir);
-            }
-            else
-            {
-                bool is_successful = api::s_orm().scaffold_table_files(
-                    db_scaffold_target, models_dir, migrations_dir);
-
-                if (is_successful)
-                {
-                    std::println("Successfully scaffolded table '{}' into '{}' "
-                                 "and '{}'.",
-                                 db_scaffold_target, models_dir,
-                                 migrations_dir);
-                }
-                else
-                {
-                    std::println(stderr, "Failed to scaffold table '{}'.",
-                                 db_scaffold_target);
-
-                    return EXIT_FAILURE;
-                }
-            }
-
-            return EXIT_SUCCESS;
-        }
-
-        if (!make_model_name.empty())
-        {
-            std::string table_name =
-                !table_override.empty()
-                    ? table_override
-                    : api::class_to_table_name(make_model_name);
-            std::string filename =
-                api::table_to_model_filename(table_name) + ".lua";
-            std::filesystem::path target_directory(models_dir);
-            std::error_code error_code;
-
-            if (!std::filesystem::exists(target_directory, error_code))
-            {
-                std::filesystem::create_directories(target_directory,
-                                                    error_code);
-            }
-
-            std::filesystem::path target_path = target_directory / filename;
-
-            auto schema = api::s_orm().describe_table(table_name);
-            std::string generated_code =
-                api::s_orm().generate_model_code(table_name, schema);
-
-            std::ofstream file_stream(target_path);
-
-            if (!file_stream.is_open())
-            {
-                std::println(stderr,
-                             "Error: Could not open file '{}' for writing.",
-                             target_path.string());
-
-                return EXIT_FAILURE;
-            }
-
-            file_stream << generated_code;
-            file_stream.close();
-
-            std::println("Model created successfully: {}",
-                         target_path.string());
-
-            return EXIT_SUCCESS;
-        }
-
-        if (!make_migration_name.empty())
-        {
-            std::string table_name = table_override;
-
-            if (table_name.empty())
-            {
-                std::string name_lower = make_migration_name;
-
-                std::transform(
-                    name_lower.begin(), name_lower.end(), name_lower.begin(),
-                    [](unsigned char character)
-                    { return static_cast<char>(std::tolower(character)); });
-
-                if (name_lower.starts_with("create_") &&
-                    name_lower.ends_with("_table") && name_lower.size() > 13)
-                {
-                    table_name = name_lower.substr(7, name_lower.size() - 13);
-                }
-                else if (name_lower.starts_with("create_") &&
-                         name_lower.size() > 7)
-                {
-                    table_name = name_lower.substr(7);
-                }
-                else
-                {
-                    table_name = api::class_to_table_name(make_migration_name);
-                }
-            }
-
-            auto current_time = std::chrono::system_clock::now();
-            std::time_t time_t_value =
-                std::chrono::system_clock::to_time_t(current_time);
-            std::tm time_structure{};
-
-            __localtime_(&time_t_value, &time_structure);
-
-            std::ostringstream prefix_stream;
-
-            prefix_stream << std::put_time(&time_structure, "%Y_%m_%d_%H%M%S");
-
-            std::filesystem::path target_directory(migrations_dir);
-            std::error_code error_code;
-
-            if (!std::filesystem::exists(target_directory, error_code))
-            {
-                std::filesystem::create_directories(target_directory,
-                                                    error_code);
-            }
-
-            std::string migration_filename = make_migration_name;
-
-            if (!migration_filename.ends_with(".lua"))
-            {
-                migration_filename =
-                    prefix_stream.str() + "_" + migration_filename + ".lua";
-            }
-
-            std::filesystem::path target_path =
-                target_directory / migration_filename;
-
-            auto schema = api::s_orm().describe_table(table_name);
-            std::string generated_code =
-                api::s_orm().generate_migration_code(table_name, schema);
-
-            std::ofstream file_stream(target_path);
-
-            if (!file_stream.is_open())
-            {
-                std::println(stderr,
-                             "Error: Could not open file '{}' for writing.",
-                             target_path.string());
-
-                return EXIT_FAILURE;
-            }
-
-            file_stream << generated_code;
-            file_stream.close();
-
-            std::println("Migration created successfully: {}",
-                         target_path.string());
-
-            return EXIT_SUCCESS;
-        }
-    }
 
     if (port_override > 0)
     {

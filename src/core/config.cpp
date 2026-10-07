@@ -96,22 +96,36 @@ ServerConfig load_config(const std::string &lua_configuration_path)
                 });
         }
 
-        sol::optional<sol::table> database_table_optional = config_table["db"];
+        sol::optional<sol::table> ollama_table_optional =
+            config_table["ollama"];
 
-        if (database_table_optional)
+        if (ollama_table_optional)
         {
-            configuration.db_driver =
-                database_table_optional.value().get_or<std::string>(
-                    "driver", configuration.db_driver);
-            configuration.db_connection =
-                database_table_optional.value().get_or<std::string>(
-                    "connection", configuration.db_connection);
+            configuration.ollama_enabled =
+                ollama_table_optional.value().get_or<bool>(
+                    "enabled", configuration.ollama_enabled);
+            configuration.ollama_host =
+                ollama_table_optional.value().get_or<std::string>(
+                    "host", configuration.ollama_host);
+            configuration.ollama_port =
+                ollama_table_optional.value().get_or<uint16_t>(
+                    "port", configuration.ollama_port);
+            configuration.ollama_default_model =
+                ollama_table_optional.value().get_or<std::string>(
+                    "default_model", configuration.ollama_default_model);
+            configuration.ollama_system_prompt =
+                ollama_table_optional.value().get_or<std::string>(
+                    "system_prompt", configuration.ollama_system_prompt);
+            configuration.ollama_session_ttl =
+                ollama_table_optional.value().get_or<int>(
+                    "session_ttl", configuration.ollama_session_ttl);
+            configuration.ollama_timeout_seconds =
+                ollama_table_optional.value().get_or<int>(
+                    "timeout_seconds", configuration.ollama_timeout_seconds);
+            configuration.ollama_auto_discover =
+                ollama_table_optional.value().get_or<bool>(
+                    "auto_discover_agents", configuration.ollama_auto_discover);
         }
-
-        configuration.db_driver = config_table.get_or<std::string>(
-            "db_driver", configuration.db_driver);
-        configuration.db_connection = config_table.get_or<std::string>(
-            "db_connection", configuration.db_connection);
         configuration.htaccess_file = config_table.get_or<std::string>(
             "htaccess_file", configuration.htaccess_file);
     }
